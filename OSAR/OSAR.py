@@ -592,7 +592,7 @@ class OSAR(Layer):
         self.built = True
 
     def compute_output_shape(self, input_shape):
-        return input_shape[-1]
+        return (input_shape[0] + (self.n_actions,))
 
     def call(self, inputs, mask=None, training=None, initial_state=None):
         if not (inputs.shape is 2):

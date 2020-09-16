@@ -14,4 +14,4 @@
 # limitations under the License.
 name = 'OSAR'
 
-from OSAR import OSAR as OSARLayer
+from .OSAR import *
