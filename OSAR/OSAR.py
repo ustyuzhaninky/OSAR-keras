@@ -197,30 +197,10 @@ def transformerShift(inputs, memory, conv_units, short_units,
 
 class OSAR(Layer):
 
-    def __init__(self,
-                 units,
-                 feature_units,
-                 memory_size,
-                 conv_units,
-                 n_actions,
-                 num_head=10,
-                 dropout=0.0,
-                 use_bias=True,
-                 compression_rate=4,
-                 gate_initializer='glorot_normal',
-                 gate_regularizer='l2',
-                 gate_constraint=None,
-                 state_initializer='glorot_uniform',
-                 state_constraint=None,
-                 bias_initializer='zeros',
-                 bias_regularizer='l2',
-                 bias_constraint=None,
-                 **kwargs):
-        """OSAR - Object-Stimulated Active Repeater
+    """OSAR - Object-Stimulated Active Repeater
 
         # Arguments
             units: int > 0. Number of classic units inside the layer.
-            feature_units: int > 0. Number of output features in the layer.
             memory_size: int > 1. Size of the dictionary memory. Big numbers allows to store more combinations, but requires more space and speed.
             conv_units: int > 0. Number of convolution units in the layer.
             n_actions: int > 1. Number of actions in the output vector.
@@ -245,6 +225,26 @@ class OSAR(Layer):
             - None yet
 
         """
+    
+    def __init__(self,
+                 units,
+                 memory_size,
+                 conv_units,
+                 n_actions,
+                 num_heads=10,
+                 dropout=0.0,
+                 use_bias=True,
+                 compression_rate=4,
+                 gate_initializer='glorot_normal',
+                 gate_regularizer='l2',
+                 gate_constraint=None,
+                 state_initializer='glorot_uniform',
+                 state_constraint=None,
+                 bias_initializer='zeros',
+                 bias_regularizer='l2',
+                 bias_constraint=None,
+                 **kwargs):
+        
         # return_runtime is a flag for testing, which shows the real backend
         # implementation chosen by grappler in graph mode.
         self._return_runtime = kwargs.pop('return_runtime', False)
@@ -256,8 +256,7 @@ class OSAR(Layer):
         self.units = units
         self.n_actions = n_actions
         self.conv_units = conv_units
-        self.feature_units = feature_units
-        self.num_head = num_head
+        self.num_heads = num_heads
         self.dropout = dropout
         self.use_bias = use_bias
         self.memory_size = memory_size
@@ -295,10 +294,8 @@ class OSAR(Layer):
 
         # Probability gate
         self.p_gate = MultiHeadAttention(
-            # units=self.units,
-            num_head=self.num_head,
-            key_dim=n_digits,
-            # value_dim=n_digits,
+            self.num_heads,
+            n_digits,
             use_bias=self.use_bias,
             kernel_initializer=self.gate_initializer,
             kernel_regularizer=self.gate_regularizer,
@@ -312,9 +309,8 @@ class OSAR(Layer):
 
         # New action gate
         self.an_gate = MultiHeadAttention(
-            # units=self.units,
-            num_head=self.num_head,
-            key_dim=n_digits,
+            self.num_heads,
+            n_digits,
             value_dim=self.n_actions,
             use_bias=self.use_bias,
             kernel_initializer=self.gate_initializer,
@@ -329,10 +325,8 @@ class OSAR(Layer):
 
         # Stimuli-Reward gate
         self.SR_gate = MultiHeadAttention(
-            # units=self.units,
-            num_head=self.num_head,
-            key_dim=self.n_actions,
-            # value_dim=self.n_actions,
+            self.num_heads,
+            self.n_actions,
             use_bias=self.use_bias,
             kernel_initializer=self.gate_initializer,
             kernel_regularizer=self.gate_regularizer,
@@ -346,9 +340,8 @@ class OSAR(Layer):
         
         # Forecast gate
         self.f_gate = MultiHeadAttention(
-            # units=self.units,
-            num_head=self.num_head,
-            key_dim=self.n_actions,
+            self.num_heads,
+            self.n_actions,
             value_dim=n_digits,
             use_bias=self.use_bias,
             kernel_initializer=self.gate_initializer,
@@ -363,9 +356,8 @@ class OSAR(Layer):
 
         # Backprop decision gate
         self.d_gate = MultiHeadAttention(
-            # units=self.units,
-            num_head=self.num_head,
-            key_dim=n_digits,
+            self.num_heads,
+            n_digits,
             value_dim=self.n_actions,
             use_bias=self.use_bias,
             kernel_initializer=self.gate_initializer,
@@ -380,9 +372,8 @@ class OSAR(Layer):
 
         # Action overhaul gate
         self.ao_gate = MultiHeadAttention(
-            # units=self.units,
-            num_head=self.num_head,
-            key_dim=self.n_actions,
+            self.num_heads,
+            self.n_actions,
             value_dim=self.n_actions,
             use_bias=self.use_bias,
             kernel_initializer=self.gate_initializer,
@@ -812,8 +803,7 @@ class OSAR(Layer):
             'units': self.units,
             'conv_units': self.conv_units,
             'n_actions': self.n_actions,
-            'feature_units': self.feature_units,
-            'num_head': self.num_head,
+            'num_heads': self.num_heads,
             'dropout': self.dropout,
             'use_bias': self.use_bias,
             'memory_size': self.memory_size,
