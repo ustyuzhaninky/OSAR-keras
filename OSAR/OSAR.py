@@ -742,7 +742,7 @@ class OSAR(Layer):
         #     self.internal_reward, object_query_corrected[:, -2, ...], new_strategy[:, -2, ...])  # t-1 case
         # self._update_relevance_matrix(
         #     self.expected_reward, new_obj, new_act)  # t case
-        if return_sequences:
+        if self.return_sequences:
             return new_strategy
         else:
             return new_strategy[..., -1, :]
