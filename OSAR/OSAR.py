@@ -215,7 +215,8 @@ class OSAR(Layer):
             state_constraint: keras.constraint. Constraint for state matrices (default - None).
             bias_initializer: keras.initializer. Initializer for biases (default - zeros).
             bias_regularizer: keras.regularizer. Regularizer for biases (default - l2).
-            bias_constraint: keras.constraint. Constraint for attention weights (default - None).
+            bias_constraint: keras.constraint. Constraint for attention weights (default - None),
+            return_sequences: bool If the layer should return sequences (default - False).
         
         # Input Shape
             3D tensor with shape: `(batch_size, sequence_length, units)`.
@@ -243,6 +244,7 @@ class OSAR(Layer):
                  bias_initializer='zeros',
                  bias_regularizer='l2',
                  bias_constraint=None,
+                 return_sequences = False,
                  **kwargs):
         
         # return_runtime is a flag for testing, which shows the real backend
@@ -271,6 +273,8 @@ class OSAR(Layer):
         self.bias_initializer = initializers.get(bias_initializer)
         self.bias_regularizer = regularizers.get(bias_regularizer)
         self.bias_constraint = constraints.get(bias_constraint)
+
+        self.return_sequences = return_sequences
 
     def build(self, input_shape):
         input_shape = input_shape[0]
@@ -738,8 +742,10 @@ class OSAR(Layer):
         #     self.internal_reward, object_query_corrected[:, -2, ...], new_strategy[:, -2, ...])  # t-1 case
         # self._update_relevance_matrix(
         #     self.expected_reward, new_obj, new_act)  # t case
-
-        return new_strategy
+        if return_sequences:
+            return new_strategy
+        else:
+            return new_strategy[..., -1, :]
     
     def _min_ABdict_replace_op(self, memory_matrix_A, memory_matrix_B, vector_A, vector_B, new_relevance):
         '''Replaces most irrelevant member of AB dictionary'''
