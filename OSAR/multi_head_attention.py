@@ -38,6 +38,7 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import special_math_ops
 from tensorflow.python.util.tf_export import keras_export
+import tensorflow.keras.backend as K
 
 
 _CHR_IDX = string.ascii_lowercase
@@ -357,7 +358,7 @@ class MultiHeadAttention(Layer):
     if self._attention_axes is None:
       self._attention_axes = tuple(range(1, rank - 2))
     else:
-      self._attention_axes = tuple(self._attention_axes)
+      self._attention_axes = self._attention_axes #tuple(self._attention_axes)
     self._dot_product_equation, self._combine_equation, attn_scores_rank = (
         _build_attention_equation(rank, attn_axes=self._attention_axes))
     norm_axes = tuple(
@@ -375,7 +376,9 @@ class MultiHeadAttention(Layer):
       for _ in range(len(attention_scores.shape) - len(attention_mask.shape)):
         attention_mask = array_ops.expand_dims(
             attention_mask, axis=mask_expansion_axes)
-    return self._softmax(attention_scores, attention_mask)
+    #BUG:  Does not suport masking - `advanced_activations.Softmax` has no such option
+    # self._softmax(attention_scores)#, mask=attention_mask)
+    return K.softmax(attention_scores)
 
   def _compute_attention(self, query, key, value, attention_mask=None):
     """Applies Dot-product attention with query, key, value tensors.
