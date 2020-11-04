@@ -79,3 +79,13 @@ class ContextEmbedding(keras.layers.Layer):
         if K.dtype(id_out) != 'int32':
             id_out = K.cast(id_out, 'int32')
         return id_out
+    
+    def get_config(self):
+        config = {
+            "mask_zero":
+                self.mask_zero,
+            "supports_masking":
+                self.supports_masking
+            }
+        base_config = super(ContextEmbedding, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
