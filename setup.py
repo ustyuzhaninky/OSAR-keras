@@ -23,21 +23,22 @@ See: https://github.com/ustyuzhaninky/OSAR-keras
 from os import path
 from setuptools import find_packages
 from setuptools import setup
+from OSAR import __version__ as OSAR_VERSION
 
 here = path.abspath(path.dirname(__file__))
 
 install_requires = ['tensorflow >= 2.3.0',
-                    'gym >= 0.10.5',]
-tests_require = ['gin-config >= 0.1.1', 'absl-py >= 0.2.2',
-                 'opencv-python >= 3.4.1.15',
-                 'gym >= 0.10.5', 'mock >= 1.0.0', 'Pillow >= 5.4.1']
+                    ]
+tests_require = ['matplotlib>=3.1.3',
+                 'gym >= 0.10.5', 'graphviz >= 0.14',
+                 'pydot >= 1.4.1', ]
 
 nosferatu_description = (
     'OSAR: An Objective Stimuli Active Repeater')
 
 setup(
     name='OSAR',
-    version='0.0.1',
+    version=OSAR_VERSION,
     include_package_data=True,
     packages=find_packages(exclude=['docs']),  # Required
     # package_data={'testdata': ['testdata/*.gin']},

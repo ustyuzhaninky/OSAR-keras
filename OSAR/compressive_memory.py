@@ -23,9 +23,9 @@ from __future__ import print_function
 
 import tensorflow as tf
 from tensorflow.python.framework import tensor_shape
-from tensorflow import keras
 from tensorflow.keras import  backend as K
-from keras_transformer_xl.memory import Memory
+from tensorflow.python.ops import nn
+from .tfxl import Memory
 
 __all__ = ['CompressiveAvgPoolMemory']
 
@@ -38,6 +38,7 @@ class CompressiveAvgPoolMemory(Memory):
         memory_len: int > 0. Maximum memory length.
         conv_memory_len: int > 0. Maximum length of convolution memory.
         output_dim: int > 0. Dimension of outputs.
+        compression_rate: int > 0. Rate of compression for old memories.
 
     # Input shape
         3D tensor with shape: `(batch_size, sequence_length, output_dim)`.
@@ -52,7 +53,13 @@ class CompressiveAvgPoolMemory(Memory):
     """
 
     def __init__(self, batch_size, memory_len, conv_memory_len, output_dim, compression_rate, **kwargs):
-        super(CompressiveAvgPoolMemory, self).__init__(**kwargs)
+        super(CompressiveAvgPoolMemory, self).__init__(
+            batch_size,
+            memory_len,
+            conv_memory_len,
+            output_dim,
+            **kwargs
+            )
         self.supports_masking = True
         self.stateful = True
 
@@ -75,7 +82,7 @@ class CompressiveAvgPoolMemory(Memory):
         super(CompressiveAvgPoolMemory, self).build(input_shape)
     
     def _compress(self, inputs):
-        return K.nn.relu(K.nn.avg_pool1d(
+        return nn.relu(nn.avg_pool1d(
             inputs,
             self.compression_rate,
             self.compression_rate,
@@ -120,28 +127,26 @@ class CompressiveAvgPoolMemory(Memory):
         old_memory = tf.slice(                                     # (self.batch_size, self.memory_len, output_dim)
             new_memory,
             (0, 0, 0),
-            (self.batch_size, seq_len, self.output_dim),
+            (self.batch_size, 1, self.output_dim),
         )
         old_memory = self._compress(old_memory)                    # (batch_size, memory_length, output_dim)
         new_memory = K.concatenate([self.memory, padded], axis=1)
         
-        conv_memory = tf.slice(self.memory,
-                               (0, 1, 0), (batch_size, self.memory_len + \
-                                           self.conv_memory_len, self.output_dim))
+        conv_memory = tf.slice(new_memory,
+                               (0, 1, 0), (batch_size, self.conv_memory_len-1, self.output_dim))
         new_conv = K.concatenate([old_memory, conv_memory], axis=1)
-        short_memory = tf.slice(self.memory,
-                                (0, self.conv_memory_len, 0), (batch_size, self.memory_len +
-                                            self.conv_memory_len, self.output_dim))
+        short_memory = tf.slice(new_memory,
+                                (0, self.conv_memory_len, 0), (batch_size, self.memory_len, self.output_dim))
         new_memory = K.concatenate([new_conv, short_memory], axis=1)
-        
-        self.add_update(K.update(self.memory, new_memory), inputs)
+        self.add_update(K.update(self.memory, new_memory))
         
         # Build output
         old_memory = tf.slice(                                     # (batch_size, memory_length, output_dim)
             new_memory,
             (0, K.maximum(0, self.memory_len + \
                           self.conv_memory_len - seq_len - memory_length), 0),
-            (batch_size, K.minimum(self.memory_len, memory_length), self.output_dim),
+            (batch_size, K.minimum(self.memory_len + \
+                                   self.conv_memory_len, memory_length), self.output_dim),
         )
 
         return old_memory

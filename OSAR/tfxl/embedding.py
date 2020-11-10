@@ -95,6 +95,7 @@ class AdaptiveEmbedding(tf.keras.layers.Layer):
                 regularizer=self.embeddings_regularizer,
                 constraint=self.embeddings_constraint,
                 name='embeddings',
+                trainable=True,
             )
             if self.embed_dim != self.output_dim or self.force_projection:
                 self.projections = self.add_weight(
@@ -103,6 +104,7 @@ class AdaptiveEmbedding(tf.keras.layers.Layer):
                     regularizer=self.kernel_regularizer,
                     constraint=self.kernel_constraint,
                     name='kernel',
+                    trainable=True,
                 )
         else:
             self.embeddings, self.projections = [], []
@@ -114,6 +116,7 @@ class AdaptiveEmbedding(tf.keras.layers.Layer):
                     regularizer=self.embeddings_regularizer,
                     constraint=self.embeddings_constraint,
                     name='embeddings-{}'.format(i),
+                    trainable=True,
                 ))
                 projection_shape = (embed_dim, self.output_dim)
                 if embed_dim == self.output_dim and not self.force_projection:
@@ -124,6 +127,7 @@ class AdaptiveEmbedding(tf.keras.layers.Layer):
                     regularizer=self.kernel_regularizer,
                     constraint=self.kernel_constraint,
                     name='kernel-{}'.format(i),
+                    trainable=True,
                 ))
         super(AdaptiveEmbedding, self).build(input_shape)
 
@@ -196,13 +200,13 @@ class AdaptiveEmbedding(tf.keras.layers.Layer):
             if self.div_val == 1:
                 out += [self.embeddings]
             else:
-                out += [K.identity(embed) for embed in self.embeddings]
+                out += [tf.identity(embed) for embed in self.embeddings]
         if self.return_projections:
             if self.div_val == 1:
                 if self.projections is not None:
                     out += [self.projections]
             else:
-                out += [K.identity(proj) for proj in self.projections]
+                out += [tf.identity(proj) for proj in self.projections]
         return out
 
     def get_config(self):

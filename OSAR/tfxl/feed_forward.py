@@ -84,6 +84,7 @@ class FeedForward(tf.keras.layers.Layer):
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
             name='{}_W1'.format(self.name),
+            trainable=True,
         )
         if self.use_bias:
             self.b1 = self.add_weight(
@@ -92,6 +93,7 @@ class FeedForward(tf.keras.layers.Layer):
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
                 name='{}_b1'.format(self.name),
+                trainable=True,
             )
         self.W2 = self.add_weight(
             shape=(self.units, feature_dim),
@@ -99,6 +101,7 @@ class FeedForward(tf.keras.layers.Layer):
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
             name='{}_W2'.format(self.name),
+            trainable=True,
         )
         if self.use_bias:
             self.b2 = self.add_weight(
@@ -107,6 +110,7 @@ class FeedForward(tf.keras.layers.Layer):
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
                 name='{}_b2'.format(self.name),
+                trainable=True,
             )
         super(FeedForward, self).build(input_shape)
 

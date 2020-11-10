@@ -13,5 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 name = 'OSAR'
+__version__ = "0.0.5"
 
-from .OSAR import *
+from OSAR.context_embedding import *
+from OSAR.compressive_memory import *
+from OSAR.gates import *
+from OSAR.OSAR import *
+from OSAR.tfxl import *
+

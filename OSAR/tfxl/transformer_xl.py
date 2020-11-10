@@ -94,8 +94,6 @@ def build_transformer_xl(units,
         name='Embed-Token',
     )(token_input)
     token_embed, embedding_weights = results[0], results[1:]            # (None, target_len, units), [(num_token, ) ]
-    print('token_embed', token_embed.shape)
-    print('embedding_weights', embedding_weights)
     token_embed = Scale(scale=np.sqrt(units), name='Embed-Token-Scaled')(token_embed)
     last_memory = Memory(
         batch_size=batch_size,
@@ -104,13 +102,11 @@ def build_transformer_xl(units,
         output_dim=units,
         name='Memory-0',
     )([token_embed, memory_length_input])
-    print('last_memory', last_memory.shape)
     position_embed = PositionalEmbedding(
         output_dim=units,
         clamp_len=clamp_len,
         name='Embed-Position',
     )([token_input, last_memory])
-    print('position_embed', position_embed.shape)
     if 0.0 < dropout < 1.0:
         token_embed = tf.keras.layers.Dropout(rate=dropout, name='Embed-Token-Dropped')(token_embed)
         position_embed = tf.keras.layers.Dropout(rate=dropout, name='Embed-Position-Dropped')(position_embed)
@@ -118,8 +114,6 @@ def build_transformer_xl(units,
     context_bias, relative_bias = None, None
     if share_biases:
         context_bias, relative_bias = RelativeBias(units=units, name='Biases')(last_memory)
-    print('context_bias', context_bias.shape)
-    print('relative_bias', relative_bias.shape)
     outputs = [token_embed]
     for i in range(num_block):
         block_input, block_output = outputs[-1], outputs[-1]
@@ -132,7 +126,6 @@ def build_transformer_xl(units,
             attention_dropout=attention_dropout,
             name='Attention-{}'.format(i + 1),
         )([block_output, position_embed, last_memory, context_bias, relative_bias])
-        print('block_output', block_output.shape)
         if 0.0 < dropout < 1.0:
             block_output = tf.keras.layers.Dropout(rate=dropout, name='Attention-Dropped-{}'.format(i + 1))(block_output)
         block_output = tf.keras.layers.Add(name='Attention-Res-{}'.format(i + 1))([block_input, block_output])
@@ -144,7 +137,6 @@ def build_transformer_xl(units,
             dropout_rate=dropout,
             name='FeedForward-{}'.format(i + 1),
         )(block_output)
-        print('block_output', block_output.shape)
         if 0.0 < dropout < 1.0:
             block_output = tf.keras.layers.Dropout(rate=dropout, name='FeedForward-Dropped-{}'.format(i + 1))(block_output)
         block_output = tf.keras.layers.Add(name='FeedForward-Res-{}'.format(i + 1))([block_input, block_output])
@@ -158,7 +150,6 @@ def build_transformer_xl(units,
                 output_dim=units,
                 name='Memory-{}'.format(i + 1),
             )([block_output, memory_length_input])
-            print('last_memory', last_memory.shape)
 
         outputs.append(block_output)
 
@@ -175,6 +166,5 @@ def build_transformer_xl(units,
         bind_projections=bind_projections,
         name='Softmax',
     )(outputs[-1:] + embedding_weights)
-    print('softmax', softmax.shape)
     model = tf.keras.models.Model(inputs=inputs, outputs=softmax)
     return model

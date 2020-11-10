@@ -14,15 +14,15 @@
 # limitations under the License.
 name = 'tfxl'
 
-from .scale import *
-from .memory import *
-from .pos_embed import *
+from OSAR.tfxl.scale import *
+from OSAR.tfxl.memory import *
+from OSAR.tfxl.pos_embed import *
 from .rel_bias import *
-from .rel_multi_head import *
-from .loader import *
-from .transformer_xl import *
-from .sequence import *
-from .softmax import *
-from .embedding import *
-from .feed_forward import *
-from .layer_normalization import *
+from OSAR.tfxl.rel_multi_head import *
+from OSAR.tfxl.loader import *
+from OSAR.tfxl.transformer_xl import *
+from OSAR.tfxl.sequence import *
+from OSAR.tfxl.softmax import *
+from OSAR.tfxl.embedding import *
+from OSAR.tfxl.feed_forward import *
+from OSAR.tfxl.layer_normalization import *

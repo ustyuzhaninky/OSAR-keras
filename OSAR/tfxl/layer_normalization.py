@@ -75,6 +75,7 @@ class LayerNormalization(tf.keras.layers.Layer):
                 regularizer=self.gamma_regularizer,
                 constraint=self.gamma_constraint,
                 name='gamma',
+                trainable=True,
             )
         if self.center:
             self.beta = self.add_weight(
@@ -83,6 +84,7 @@ class LayerNormalization(tf.keras.layers.Layer):
                 regularizer=self.beta_regularizer,
                 constraint=self.beta_constraint,
                 name='beta',
+                trainable=True,
             )
         super(LayerNormalization, self).build(input_shape)
 

@@ -71,6 +71,7 @@ class RelativePartialMultiHeadSelfAttention(tf.keras.layers.Layer):
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
             name='kernel_q',
+            trainable=True,
         )
         if self.use_bias:
             self.bias_q = self.add_weight(
@@ -79,6 +80,7 @@ class RelativePartialMultiHeadSelfAttention(tf.keras.layers.Layer):
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
                 name='bias_q',
+                trainable=True,
             )
 
         self.kernel_kv = self.add_weight(
@@ -87,6 +89,7 @@ class RelativePartialMultiHeadSelfAttention(tf.keras.layers.Layer):
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
             name='kernel_kv',
+            trainable=True,
         )
         if self.use_bias:
             self.bias_kv = self.add_weight(
@@ -95,6 +98,7 @@ class RelativePartialMultiHeadSelfAttention(tf.keras.layers.Layer):
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
                 name='bias_kv',
+                trainable=True,
             )
 
         self.kernel_o = self.add_weight(
@@ -103,6 +107,7 @@ class RelativePartialMultiHeadSelfAttention(tf.keras.layers.Layer):
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
             name='kernel_o',
+            trainable=True,
         )
         if self.use_bias:
             self.bias_o = self.add_weight(
@@ -111,6 +116,7 @@ class RelativePartialMultiHeadSelfAttention(tf.keras.layers.Layer):
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
                 name='bias_o',
+                trainable=True,
             )
 
         self.kernel_r = self.add_weight(
@@ -119,6 +125,7 @@ class RelativePartialMultiHeadSelfAttention(tf.keras.layers.Layer):
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
             name='kernel_r',
+            trainable=True,
         )
         if self.use_bias:
             self.bias_r = self.add_weight(
@@ -127,6 +134,7 @@ class RelativePartialMultiHeadSelfAttention(tf.keras.layers.Layer):
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
                 name='bias_r',
+                trainable=True,
             )
         if 0.0 < self.attention_dropout < 1.0:
             self.att_drop_layer = tf.keras.layers.Dropout(self.attention_dropout)

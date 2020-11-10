@@ -65,13 +65,13 @@ class ContextEmbedding(keras.layers.Layer):
         if not self.mask_zero:
             output_mask = None
         else:
-            output_mask = K.not_equal(inputs, 0)
+            output_mask = None#K.not_equal(inputs, 0)
         
         return output_mask
 
     def call(self, inputs, **kwargs):
-        
-        out, id_out = K.eval(tf.math.top_k(inputs, k=inputs.shape[-1], sorted=True))
+        k = inputs.shape[-1]
+        out, id_out = K.eval(tf.math.top_k(inputs, k=k, sorted=False))
 
         if self.mask_zero:
             id_out = id_out + 1

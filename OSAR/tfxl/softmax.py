@@ -98,6 +98,7 @@ class AdaptiveSoftmax(tf.keras.layers.Layer):
                     regularizer=self.embeddings_regularizer,
                     constraint=self.embeddings_constraint,
                     name='embeddings',
+                    trainable=True,
                 )
             if self.embed_dim != self.input_dim or self.force_projection:
                 if not self.bind_projections[0]:
@@ -107,6 +108,7 @@ class AdaptiveSoftmax(tf.keras.layers.Layer):
                         regularizer=self.kernel_regularizer,
                         constraint=self.kernel_constraint,
                         name='kernel',
+                        trainable=True,
                     )
             if self.use_bias:
                 self.biases = self.add_weight(
@@ -115,6 +117,7 @@ class AdaptiveSoftmax(tf.keras.layers.Layer):
                     regularizer=self.bias_regularizer,
                     constraint=self.bias_constraint,
                     name='bias',
+                    trainable=True,
                 )
         else:
             self.kernel_cluster = self.add_weight(
@@ -123,6 +126,7 @@ class AdaptiveSoftmax(tf.keras.layers.Layer):
                 regularizer=self.kernel_regularizer,
                 constraint=self.kernel_constraint,
                 name='kernel-cluster',
+                trainable=True,
             )
             if self.use_bias:
                 self.bias_cluster = self.add_weight(
@@ -131,6 +135,7 @@ class AdaptiveSoftmax(tf.keras.layers.Layer):
                     regularizer=self.kernel_regularizer,
                     constraint=self.kernel_constraint,
                     name='bias-cluster',
+                    trainable=True,
                 )
             self.embeddings, self.projections = [], []
             if self.use_bias:
@@ -180,9 +185,10 @@ class AdaptiveSoftmax(tf.keras.layers.Layer):
         return input_shape[0][:-1] + (self.output_dim,)
 
     def call(self, inputs, **kwargs):
-        embeddings = inputs[1:1 + (self.cluster_num + 1)]
-        projections = inputs[1 + (self.cluster_num + 1):]
-        inputs = inputs[0]
+        #BUG (ustyuzhaninky): `AdaptiveSoftmax` class reduces batch dimension and demands it to be greater than 1
+        embeddings = inputs#[1:1 + (self.cluster_num + 1)]
+        projections = inputs#[1 + (self.cluster_num + 1):]
+        inputs = inputs#[0]
         if self.div_val == 1:
             if self.embed_dim != self.input_dim or self.force_projection:
                 projection = self.projections
