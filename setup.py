@@ -41,7 +41,7 @@ def get_version(rel_path):
 here = path.abspath(path.dirname(__file__))
 
 install_requires = [
-                    'importlib-metadata ~= 1.0 ; python_version > "3.6"',
+                    'importlib-metadata ~= 1.0 ; python_version >= "3.6"',
                     'tensorflow >= 2.3.0',
                     ]
 tests_require = ['matplotlib>=3.1.3',
@@ -76,7 +76,6 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
