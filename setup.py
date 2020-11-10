@@ -53,7 +53,7 @@ nosferatu_description = (
 
 setup(
     name='OSAR',
-    version=et_version("OSAR/__init__.py"),
+    version=get_version("OSAR/__init__.py"),
     include_package_data=True,
     packages=find_packages(exclude=['docs']),  # Required
     # package_data={'testdata': ['testdata/*.gin']},
