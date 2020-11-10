@@ -23,11 +23,26 @@ See: https://github.com/ustyuzhaninky/OSAR-keras
 from os import path
 from setuptools import find_packages
 from setuptools import setup
-from OSAR import __version__ as OSAR_VERSION
+import codecs
+
+def read(rel_path):
+    here = path.abspath(path.dirname(__file__))
+    with codecs.open(path.join(here, rel_path), 'r') as fp:
+        return fp.read()
+
+def get_version(rel_path):
+    for line in read(rel_path).splitlines():
+        if line.startswith('__version__'):
+            delim = '"' if '"' in line else "'"
+            return line.split(delim)[1]
+    else:
+        raise RuntimeError("Unable to find version string.")
 
 here = path.abspath(path.dirname(__file__))
 
-install_requires = ['tensorflow >= 2.3.0',
+install_requires = [
+                    'importlib-metadata ~= 1.0 ; python_version > "3.6"',
+                    'tensorflow >= 2.3.0',
                     ]
 tests_require = ['matplotlib>=3.1.3',
                  'gym >= 0.10.5', 'graphviz >= 0.14',
@@ -38,7 +53,7 @@ nosferatu_description = (
 
 setup(
     name='OSAR',
-    version=OSAR_VERSION,
+    version=et_version("OSAR/__init__.py"),
     include_package_data=True,
     packages=find_packages(exclude=['docs']),  # Required
     # package_data={'testdata': ['testdata/*.gin']},
