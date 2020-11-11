@@ -20,4 +20,5 @@ from OSAR.compressive_memory import *
 from OSAR.gates import *
 from OSAR.OSAR import *
 from OSAR.tfxl import *
+from OSAR.bolzmann_gate import *
 

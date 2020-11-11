@@ -34,6 +34,7 @@ from tensorflow.keras import optimizers
 from tensorflow.keras import regularizers
 from tensorflow.keras import losses
 
+__all__ = ['BolzmannGate', ]
 
 class BolzmannGate(tf.keras.layers.Layer):
     '''A cell implementing an online bolzmann restricted machine layer in TensorFlow 2.
@@ -207,7 +208,7 @@ class BolzmannGate(tf.keras.layers.Layer):
                                   a_is_sparse=K.is_sparse(
             sample_hidden_units_gibbs_step),
             b_is_sparse=K.is_sparse(compute_visible_units))
-        
+
         grad_kernel = tf.transpose(
             positive_grad - negative_grad)
         if self.use_bias:
