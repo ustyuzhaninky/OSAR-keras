@@ -106,7 +106,7 @@ class AttentionGate(tf.keras.layers.Layer):
         dropout_rate: 0.0 <= float <= 1.0. Dropout rate for hidden units.
 
     # Input shape
-        3D tensor with shape: `(batch_size, sequence_length)`.
+        2D tensor with shape: `(batch_size, sequence_length)`.
 
     # Output shape
         3D tensor with shape: `(batch_size, sequence_length, output_dim)`.
