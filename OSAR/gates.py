@@ -23,6 +23,7 @@ from __future__ import print_function
 import tensorflow as tf
 import numpy as np
 from tensorflow.python.framework import tensor_shape
+from tensorflow.python.framework import dtypes
 from tensorflow.python.keras.layers.ops import core as core_ops
 from tensorflow.python.keras.engine.input_spec import InputSpec
 from tensorflow import keras
@@ -36,7 +37,7 @@ __all__ = ['LinearGate', 'AttentionGate', 'TransferGate']
 
 
 class TransferGate(tf.keras.layers.Dense):
-    """Copy of Dense layerd with softmax activation"""
+    """Copy of Dense layerd with softmax activation and noise chanel"""
 
     def __init__(self,
                units,
@@ -49,6 +50,7 @@ class TransferGate(tf.keras.layers.Dense):
                activity_regularizer=None,
                kernel_constraint=None,
                bias_constraint=None,
+               noise_chanel_generator='glorot_uniform',
                **kwargs):
         super(TransferGate, self).__init__(
             units,
@@ -71,17 +73,85 @@ class TransferGate(tf.keras.layers.Dense):
         self.bias_regularizer = tf.keras.regularizers.get(bias_regularizer)
         self.kernel_constraint = tf.keras.constraints.get(kernel_constraint)
         self.bias_constraint = tf.keras.constraints.get(bias_constraint)
+        self.noise_chanel_generator = tf.keras.initializers.get(
+            noise_chanel_generator)
 
         self.input_spec = InputSpec(min_ndim=2)
         self.supports_masking = True
 
+    def build(self, input_shape):
+        dtype = dtypes.as_dtype(self.dtype or K.floatx())
+        if not (dtype.is_floating or dtype.is_complex):
+            raise TypeError('Unable to build `Dense` layer with non-floating point '
+                            'dtype %s' % (dtype,))
+
+        input_shape = tensor_shape.TensorShape(input_shape)
+        last_dim = tensor_shape.dimension_value(input_shape[-1])
+        if last_dim is None:
+            raise ValueError('The last dimension of the inputs to `Dense` '
+                            'should be defined. Found `None`.')
+        self.input_spec = InputSpec(min_ndim=2, axes={-1: last_dim})
+        self.kernel = self.add_weight(
+            'kernel',
+            shape=[last_dim, self.units],
+            initializer=self.kernel_initializer,
+            regularizer=self.kernel_regularizer,
+            constraint=self.kernel_constraint,
+            dtype=self.dtype,
+            trainable=True)
+        self.noisy_kernel = self.add_weight(
+            'noisy_kernel',
+            shape=[last_dim, self.units],
+            initializer=self.kernel_initializer,
+            regularizer=self.kernel_regularizer,
+            constraint=self.kernel_constraint,
+            dtype=self.dtype,
+            trainable=True)
+        if self.use_bias:
+            self.bias = self.add_weight(
+                'bias',
+                shape=[self.units, ],
+                initializer=self.bias_initializer,
+                regularizer=self.bias_regularizer,
+                constraint=self.bias_constraint,
+                dtype=self.dtype,
+                trainable=True)
+            self.noisy_bias = self.add_weight(
+                'noisy_bias',
+                shape=[self.units, ],
+                initializer=self.bias_initializer,
+                regularizer=self.bias_regularizer,
+                constraint=self.bias_constraint,
+                dtype=self.dtype,
+                trainable=True)
+        else:
+            self.bias = None
+            self.noisy_bias = None
+        self.built = True
+
     def call(self, inputs):
-        return core_ops.dense(
-            inputs,
-            self.kernel,
-            self.bias,
-            self.activation,
-            dtype=self._compute_dtype_object)
+        noise = self.noise_chanel_generator((1,))
+        return self.activation(
+            core_ops.dense(
+                inputs,
+                self.noisy_kernel,
+                self.noisy_bias,
+                None,
+                dtype=self._compute_dtype_object) +
+            core_ops.dense(
+                inputs,
+                self.kernel * noise,
+                self.bias * noise,
+                None,
+                dtype=self._compute_dtype_object))
+
+    def get_config(self):
+        config = super(TransferGate, self).get_config()
+        config.update({
+            'noise_chanel_generator':
+                tf.keras.initializers.serialize(self.noise_chanel_generator),
+        })
+        return config
 
 class AttentionGate(tf.keras.layers.Layer):
     """Attention-based gate.
@@ -383,11 +453,6 @@ class AttentionGate(tf.keras.layers.Layer):
         x = self.forward_norm(x)
         
         return self.softmax(x + embedding_weights)
-        # x = tf.keras.layers.Flatten()(x)
-        # x = K.softmax(x + tf.reshape(embedding_weights,
-        #                              (batch_size, input_features**2)))
-
-        # return tf.reshape(x, (batch_size, input_features, input_features))
     
     def get_config(self):
         config = {
