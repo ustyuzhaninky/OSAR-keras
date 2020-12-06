@@ -68,7 +68,7 @@ class Memory(tf.keras.layers.Layer):
             (0, seq_len, 0),
             (self.batch_size, self.memory_len + self.target_len, self.output_dim),
         )
-        self.add_update(K.update(self.memory, new_memory), inputs)
+        self.add_update(K.update(self.memory, new_memory))
 
         # Build output
         old_memory = tf.slice(                                     # (batch_size, memory_length, output_dim)
