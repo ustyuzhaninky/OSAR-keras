@@ -32,7 +32,7 @@ __all__ = ['QueueMemory', ]
 
 
 class QueueMemory(tf.keras.layers.Layer):
-    """QueueMemory memory.
+    """Queue memory with floating-point priority index.
 
     # Arguments
         memory_len: int > 0. Maximum memory length.
@@ -42,7 +42,7 @@ class QueueMemory(tf.keras.layers.Layer):
         1D tensor with shape: `(batch_size,)` represents queue priority value.
 
     # Output shape
-        3D tensor with shape: `(batch_size, sequence_length + memory_length, output_dim)`.
+        3D tensor with shape: `(batch_size, memory_length, output_dim)`.
 
     # References
         - None
