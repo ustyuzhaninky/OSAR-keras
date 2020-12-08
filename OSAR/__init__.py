@@ -22,4 +22,5 @@ from OSAR.OSAR import *
 from OSAR.tfxl import *
 from OSAR.bolzmann_gate import *
 from OSAR.queue_memory import *
+from OSAR.graph_memory import *
 from OSAR.cap_layers import *
