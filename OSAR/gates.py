@@ -33,7 +33,7 @@ from .tfxl import AdaptiveEmbedding, AdaptiveSoftmax, PositionalEmbedding, \
     Scale, LayerNormalization, RelativePartialMultiHeadSelfAttention, FeedForward, Memory
 from . import CompressiveAvgPoolMemory
 
-__all__ = ['LinearGate', 'AttentionGate', 'TransferGate']
+__all__ = ['LinearGate', 'AttentionGate', 'TransferGate', 'SequenceEncoder1D']
 
 
 class TransferGate(tf.keras.layers.Dense):
@@ -150,6 +150,122 @@ class TransferGate(tf.keras.layers.Dense):
         config.update({
             'noise_chanel_generator':
                 tf.keras.initializers.serialize(self.noise_chanel_generator),
+        })
+        return config
+
+
+class SequenceEncoder1D(tf.keras.layers.Dense):
+    """Encodes and decodes sequences into one another.
+
+        # Arguments
+            units: int >= 0. Dimension of hidden units.
+            activation: Activation function to use
+            use_bias: Boolean, whether the layer uses a bias vector.
+            kernel_initializer: Initializer for the `kernel` weights matrix.
+            bias_initializer: Initializer for the bias vector.
+            kernel_regularizer: Regularizer function applied to the `kernel` weights matrix.
+            bias_regularizer: Regularizer function applied to the bias vector.
+            kernel_constraint: Constraint function applied to the `kernel` weights matrix.
+            bias_constraint: Constraint function applied to the bias vector.
+            dropout_rate: 0.0 <= float <= 1.0. Dropout rate for hidden units.
+
+        # Input shape
+            3D tensor with shape: `(batch_size, sequence_length, input_dim)`.
+
+        # Output shape
+            3D tensor with shape: `(batch_size, units, units)`.
+
+        # References
+            - 
+    """
+
+    def __init__(self,
+                 feature_units,
+                 timesteps_units,
+                 activation=None,
+                 use_bias=True,
+                 kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros',
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None,
+                 kernel_constraint=None,
+                 bias_constraint=None,
+                 **kwargs):
+        super(SequenceEncoder1D, self).__init__(
+            feature_units,
+            activation=activation,
+            use_bias=use_bias,
+            kernel_initializer=kernel_initializer,
+            bias_initializer=bias_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            kernel_constraint=kernel_constraint,
+            bias_constraint=bias_constraint,
+            activity_regularizer=activity_regularizer, **kwargs)
+
+        self.feature_units = int(feature_units) if not isinstance(
+            feature_units, int) else feature_units
+        self.timesteps_units = int(timesteps_units) if not isinstance(
+            timesteps_units, int) else timesteps_units
+
+        self.input_spec = InputSpec(min_ndim=2)
+        self.supports_masking = True
+
+    def build(self, input_shape):
+        dtype = dtypes.as_dtype(self.dtype or K.floatx())
+        if not (dtype.is_floating or dtype.is_complex):
+            raise TypeError('Unable to build `SequenceEncoder1D` layer with non-floating point '
+                            'dtype %s' % (dtype,))
+        if not len(input_shape):
+            raise ValueError('Layer input should be represented by 3D tensors of shape'
+                             '`(batch_size, sequence_length, input_dim)`. '
+                             f'Found: `{input_shape}`')
+
+        input_shape = tensor_shape.TensorShape(input_shape)
+        timesteps = tensor_shape.dimension_value(input_shape[1])
+        last_dim = tensor_shape.dimension_value(input_shape[-1])
+        if last_dim is None:
+            raise ValueError('The last dimension of the inputs to `Dense` '
+                             'should be defined. Found `None`.')
+        self.input_spec = InputSpec(min_ndim=2, axes={-1: last_dim})
+        self.kernel = self.add_weight(
+            'kernel',
+            shape=[timesteps, last_dim,
+                   self.timesteps_units, self.feature_units],
+            initializer=self.kernel_initializer,
+            regularizer=self.kernel_regularizer,
+            constraint=self.kernel_constraint,
+            dtype=self.dtype,
+            trainable=True)
+        if self.use_bias:
+            self.bias = self.add_weight(
+                'bias',
+                shape=[self.units, ],
+                initializer=self.bias_initializer,
+                regularizer=self.bias_regularizer,
+                constraint=self.bias_constraint,
+                dtype=self.dtype,
+                trainable=True)
+        else:
+            self.bias = None
+        self.built = True
+
+    def call(self, inputs):
+        h = tf.einsum('ijk,jkmn->imn', inputs, self.kernel)
+        if self.use_bias:
+            h = K.bias_add(h, self.bias)
+        if self.activation is not None:
+            h = self.activation(h)
+        
+        return h
+    
+    def get_config(self):
+        config = super(SequenceEncoder1D, self).get_config()
+        config.pop('units')
+        config.update({
+            'feature_units': self.feature_units,
+            'timesteps_units': self.timesteps_units,
         })
         return config
 
