@@ -24,6 +24,7 @@ import tensorflow as tf
 import numpy as np
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import dtypes
+from tensorflow.python.ops import special_math_ops
 from tensorflow.python.keras.layers.ops import core as core_ops
 from tensorflow.python.keras.engine.input_spec import InputSpec
 from tensorflow import keras
@@ -33,7 +34,7 @@ from .tfxl import AdaptiveEmbedding, AdaptiveSoftmax, PositionalEmbedding, \
     Scale, LayerNormalization, RelativePartialMultiHeadSelfAttention, FeedForward, Memory
 from . import CompressiveAvgPoolMemory
 
-__all__ = ['LinearGate', 'AttentionGate', 'TransferGate', 'SequenceEncoder1D']
+__all__ = ['LinearGate', 'AttentionGate', 'TransferGate', 'SequenceEncoder1D', 'FiniteDifference']
 
 
 class TransferGate(tf.keras.layers.Dense):
@@ -154,6 +155,55 @@ class TransferGate(tf.keras.layers.Dense):
         return config
 
 
+class FiniteDifference(tf.keras.layers.Layer):
+    """Calculates finite difference across given axis.
+    """
+
+    def __init__(self,
+                 order,
+                 **kwargs):
+        super(FiniteDifference, self).__init__(**kwargs)
+
+        self.order = int(order) if not isinstance(
+            order, int) else order
+        self.supports_masking = True
+
+    def build(self, input_shape):
+        dtype = dtypes.as_dtype(self.dtype or K.floatx())
+        if not (dtype.is_floating or dtype.is_complex):
+            raise TypeError('Unable to build `FiniteDifference` layer with non-floating point '
+                            'dtype %s' % (dtype,))
+        input_shape = tensor_shape.TensorShape(input_shape)
+
+        self.input_memory = self.add_weight(
+            shape=(self.order,)+input_shape[1:],
+            initializer=tf.keras.initializers.get('zeros'),
+            trainable=False
+        )
+
+    def call(self, inputs, **kwargs):
+
+        batch_size = inputs.shape[0]
+
+        mem = tf.tile(
+            tf.expand_dims(self.input_memory, axis=0),
+            [batch_size,]+[1 for i in range(len(self.input_memory.shape))])
+        inputs_reshaped = tf.tile(
+            K.reshape(inputs, (batch_size, 1,)+inputs.shape[1:]),
+            [1, self.order, ]+[1 for i in range(len(inputs.shape[1:]))]
+        )
+        diff = inputs_reshaped - mem
+
+        return K.sum(diff, axis=1) / (2*self.order)
+
+    def get_config(self):
+        config = super(FiniteDifference, self).get_config()
+        config.update({
+            'order': self.order,
+        })
+        return config
+
+
 class SequenceEncoder1D(tf.keras.layers.Dense):
     """Encodes and decodes sequences into one another.
 
@@ -252,12 +302,11 @@ class SequenceEncoder1D(tf.keras.layers.Dense):
         self.built = True
 
     def call(self, inputs):
-        h = tf.einsum('ijk,jkmn->imn', inputs, self.kernel)
+        h = special_math_ops.einsum('ijk,jkmn->imn', inputs, self.kernel)
         if self.use_bias:
             h = K.bias_add(h, self.bias)
         if self.activation is not None:
             h = self.activation(h)
-        
         return h
     
     def get_config(self):
@@ -562,7 +611,7 @@ class AttentionGate(tf.keras.layers.Layer):
         x = self.att_rescale([x, token_embed])
         x = self.att_norm(x)
         x = self.feed_forward(x)
-
+        
         if 0.0 < self.dropout < 1.0:
             x = self.forward_dropout(x)
         x = self.forward_rescale([x, token_embed])
