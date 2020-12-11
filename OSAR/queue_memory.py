@@ -39,7 +39,7 @@ class QueueMemory(tf.keras.layers.Layer):
 
     # Input shape
         3D tensor with shape: `(batch_size, sequence_length, output_dim)`.
-        1D tensor with shape: `(batch_size,)` represents queue priority value.
+        1D tensor with shape: `(batch_size, sequence_length, 1)` represents queue priority value.
 
     # Output shape
         3D tensor with shape: `(batch_size, memory_length, output_dim)`.
@@ -84,6 +84,7 @@ class QueueMemory(tf.keras.layers.Layer):
         seq_len = K.cast(K.shape(inputs)[1], 'int32')
 
         # Build new memory and index
+        # priority = K.mean(priority, axis=1)[:, -1]
         new_memory = K.concatenate([self.memory, inputs], axis=1)
         new_priority = K.concatenate([self.index, priority], axis=1)
         new_memory = tf.slice(                                     # (batch_size, self.memory_len, output_dim)
