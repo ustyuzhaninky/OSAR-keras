@@ -32,7 +32,7 @@ from tensorflow.keras import backend as K
 from .tfxl import FeedForward as LinearGate
 from .tfxl import AdaptiveEmbedding, AdaptiveSoftmax, PositionalEmbedding, \
     Scale, LayerNormalization, RelativePartialMultiHeadSelfAttention, FeedForward, Memory
-from . import CompressiveAvgPoolMemory
+from . import HelixMemory
 
 __all__ = ['LinearGate', 'AttentionGate', 'TransferGate', 'SequenceEncoder1D', 'FiniteDifference']
 
@@ -93,7 +93,7 @@ class TransferGate(tf.keras.layers.Dense):
                             'should be defined. Found `None`.')
         self.input_spec = InputSpec(min_ndim=2, axes={-1: last_dim})
         self.kernel = self.add_weight(
-            'kernel',
+            f'{self.name}-kernel',
             shape=[last_dim, self.units],
             initializer=self.kernel_initializer,
             regularizer=self.kernel_regularizer,
@@ -101,7 +101,7 @@ class TransferGate(tf.keras.layers.Dense):
             dtype=self.dtype,
             trainable=True)
         self.noisy_kernel = self.add_weight(
-            'noisy_kernel',
+            f'{self.name}-noisy-kernel',
             shape=[last_dim, self.units],
             initializer=self.kernel_initializer,
             regularizer=self.kernel_regularizer,
@@ -110,7 +110,7 @@ class TransferGate(tf.keras.layers.Dense):
             trainable=True)
         if self.use_bias:
             self.bias = self.add_weight(
-                'bias',
+                f'{self.name}-bias',
                 shape=[self.units, ],
                 initializer=self.bias_initializer,
                 regularizer=self.bias_regularizer,
@@ -118,7 +118,7 @@ class TransferGate(tf.keras.layers.Dense):
                 dtype=self.dtype,
                 trainable=True)
             self.noisy_bias = self.add_weight(
-                'noisy_bias',
+                f'{self.name}-noisy-bias',
                 shape=[self.units, ],
                 initializer=self.bias_initializer,
                 regularizer=self.bias_regularizer,
@@ -178,7 +178,8 @@ class FiniteDifference(tf.keras.layers.Layer):
         self.input_memory = self.add_weight(
             shape=(self.order,)+input_shape[1:],
             initializer=tf.keras.initializers.get('zeros'),
-            trainable=False
+            trainable=False,
+            name=f'{self.name}-input-memory'
         )
 
     def call(self, inputs, **kwargs):
@@ -202,7 +203,6 @@ class FiniteDifference(tf.keras.layers.Layer):
             'order': self.order,
         })
         return config
-
 
 class SequenceEncoder1D(tf.keras.layers.Dense):
     """Encodes and decodes sequences into one another.
@@ -271,7 +271,6 @@ class SequenceEncoder1D(tf.keras.layers.Dense):
             raise ValueError('Layer input should be represented by 3D tensors of shape'
                              '`(batch_size, sequence_length, input_dim)`. '
                              f'Found: `{input_shape}`')
-
         input_shape = tensor_shape.TensorShape(input_shape)
         timesteps = tensor_shape.dimension_value(input_shape[1])
         last_dim = tensor_shape.dimension_value(input_shape[-1])
@@ -280,7 +279,7 @@ class SequenceEncoder1D(tf.keras.layers.Dense):
                              'should be defined. Found `None`.')
         self.input_spec = InputSpec(min_ndim=2, axes={-1: last_dim})
         self.kernel = self.add_weight(
-            'kernel',
+            f'{self.name}-kernel',
             shape=[timesteps, last_dim,
                    self.timesteps_units, self.feature_units],
             initializer=self.kernel_initializer,
@@ -290,7 +289,7 @@ class SequenceEncoder1D(tf.keras.layers.Dense):
             trainable=True)
         if self.use_bias:
             self.bias = self.add_weight(
-                'bias',
+                f'{self.name}-bias',
                 shape=[self.units, ],
                 initializer=self.bias_initializer,
                 regularizer=self.bias_regularizer,
@@ -419,7 +418,7 @@ class AttentionGate(tf.keras.layers.Layer):
             force_projection=self.force_projection,
             return_embeddings=True,
             return_projections=True,
-            name='Embed-Token',
+            name=f'{self.name}-Embed-Token',
             kernel_initializer=self.kernel_initializer,
             kernel_regularizer=self.kernel_regularizer,
             kernel_constraint=self.kernel_constraint,
@@ -429,11 +428,12 @@ class AttentionGate(tf.keras.layers.Layer):
         self.adaptive_embedding.build((batch_size, sequence_length))
         self.adaptive_embedding.built = True
 
-        self.scale = Scale(scale=np.sqrt(self.units), name='Embed-Token-Scaled')
+        self.scale = Scale(scale=np.sqrt(self.units),
+                           name=f'{self.name}-Embed-Token-Scaled')
         self.scale.build((batch_size, sequence_length, self.units))
         self.scale.built = True
 
-        self.last_memory = CompressiveAvgPoolMemory(
+        self.last_memory = HelixMemory(
             batch_size,
             self.memory_len,
             self.conv_memory_len,
@@ -447,7 +447,7 @@ class AttentionGate(tf.keras.layers.Layer):
         self.position_embed = PositionalEmbedding(
             output_dim=self.units,
             clamp_len=self.clamp_len,
-            name='Embed-Position',
+            name=f'{self.name}-Embed-Position',
         )
         self.position_embed.build(
             [(batch_size, sequence_length, self.units), (batch_size, self.conv_memory_len+self.memory_len, self.units)])
@@ -455,12 +455,12 @@ class AttentionGate(tf.keras.layers.Layer):
 
         if 0.0 < self.dropout < 1.0:
             self.em_dropout = tf.keras.layers.Dropout(
-                rate=self.dropout, name='Embed-Token-Dropped')
+                rate=self.dropout, name=f'{self.name}-Embed-Token-Dropped')
             self.em_dropout.build((batch_size, sequence_length, self.units))
             self.em_dropout.built = True
 
             self.pos_dropout = tf.keras.layers.Dropout(
-                rate=self.dropout, name='Embed-Position-Dropped')
+                rate=self.dropout, name=f'{self.name}-Embed-Position-Dropped')
             self.pos_dropout.build(
                 (batch_size, sequence_length+self.conv_memory_len+self.memory_len, self.units))
             self.pos_dropout.built = True
@@ -471,7 +471,7 @@ class AttentionGate(tf.keras.layers.Layer):
             regularizer=self.bias_regularizer,
             constraint=self.bias_constraint,
             dtype=K.floatx(),
-            name='bias_context',
+            name=f'{self.name}-bias-context',
             trainable=True,
         )
         self.bias_relative = self.add_weight(
@@ -480,7 +480,7 @@ class AttentionGate(tf.keras.layers.Layer):
             regularizer=self.bias_regularizer,
             constraint=self.bias_constraint,
             dtype=K.floatx(),
-            name='bias_relative',
+            name=f'{self.name}-bias-relative',
             trainable=True,
         )
 
@@ -489,7 +489,7 @@ class AttentionGate(tf.keras.layers.Layer):
             num_head=self.num_head,
             use_bias=True,
             attention_dropout=self.attention_dropout,
-            name='Attention-1',
+            name=f'{self.name}-Attention-1',
             kernel_initializer=self.kernel_initializer,
             kernel_regularizer=self.kernel_regularizer,
             kernel_constraint=self.kernel_constraint,
@@ -510,11 +510,12 @@ class AttentionGate(tf.keras.layers.Layer):
 
         if 0.0 < self.dropout < 1.0:
             self.block_dropout = tf.keras.layers.Dropout(
-                rate=self.dropout, name='Feed-Forward-Dropped')
+                rate=self.dropout, name=f'{self.name}-Feed-Forward-Dropped')
             self.block_dropout.build((batch_size, sequence_length, self.units))
             self.block_dropout.built = True
         
-        self.att_rescale = tf.keras.layers.Add(name='Attention-Res-1')
+        self.att_rescale = tf.keras.layers.Add(
+            name=f'{self.name}-Attention-Res-1')
         self.att_rescale.build([
             (batch_size, sequence_length, self.units),
             (batch_size, sequence_length, self.units)
@@ -522,7 +523,7 @@ class AttentionGate(tf.keras.layers.Layer):
         self.att_rescale.built = True
 
         self.att_norm = LayerNormalization(
-            name='Attention-Norm-1',
+            name=f'{self.name}-Attention-Norm-1',
             gamma_regularizer=self.kernel_regularizer,
             beta_regularizer=self.kernel_regularizer,
             gamma_constraint=self.kernel_constraint,
@@ -534,7 +535,7 @@ class AttentionGate(tf.keras.layers.Layer):
         self.feed_forward = FeedForward(
             units=self.hidden_dim,
             dropout_rate=self.dropout,
-            name='FeedForward-1',
+            name=f'{self.name}-FeedForward-1',
             kernel_initializer=self.kernel_initializer,
             kernel_regularizer=self.kernel_regularizer,
             kernel_constraint=self.kernel_constraint,
@@ -547,11 +548,12 @@ class AttentionGate(tf.keras.layers.Layer):
 
         if 0.0 < self.dropout < 1.0:
             self.forward_dropout = tf.keras.layers.Dropout(
-                rate=self.dropout, name='Embed-Token-Dropped')
+                rate=self.dropout, name=f'{self.name}-Embed-Token-Dropped')
             self.forward_dropout.build((batch_size, sequence_length, self.units))
             self.forward_dropout.built = True
         
-        self.forward_rescale = tf.keras.layers.Add(name='FeedForward-Res-1')
+        self.forward_rescale = tf.keras.layers.Add(
+            name=f'{self.name}-FeedForward-Res-1')
         self.forward_rescale.build([
             (batch_size, sequence_length, self.units),
             (batch_size, sequence_length, self.units)
@@ -559,7 +561,7 @@ class AttentionGate(tf.keras.layers.Layer):
         self.forward_rescale.built = True
 
         self.forward_norm = LayerNormalization(
-            name='FeedForward-Norm-1',
+            name=f'{self.name}-FeedForward-Norm-1',
             gamma_regularizer=self.kernel_regularizer,
             beta_regularizer=self.kernel_regularizer,
             gamma_constraint=self.kernel_constraint,
@@ -576,7 +578,7 @@ class AttentionGate(tf.keras.layers.Layer):
             force_projection=self.force_projection,
             bind_embeddings=self.bind_embeddings,
             bind_projections=self.bind_projections,
-            name='Softmax',
+            name=f'{self.name}-Softmax',
         )
         self.softmax.build([(batch_size, sequence_length, self.num_token)])
         self.softmax.built = True

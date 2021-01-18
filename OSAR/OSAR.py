@@ -47,7 +47,7 @@ from .tfxl import AdaptiveEmbedding, AdaptiveSoftmax
 from .tfxl import LayerNormalization
 from .tfxl import FeedForward, Memory
 
-from .compressive_memory import CompressiveAvgPoolMemory
+from .helix_memory import HelixMemory
 from .gates import TransferGate
 from .gates import FiniteDifference
 from .gates import AttentionGate
@@ -162,10 +162,8 @@ class OSARLayer(tf.keras.layers.Layer):
             shape=(batch_size, self.n_actions),
             initializer=self.state_initializer,
             dtype=self.dtype,
-            trainable=False
+            trainable=False,
         )
-        K.variable(np.random.rand(
-            batch_size, self.n_actions), dtype=tf.float32)
         self.cont_embedding = ContextEmbedding(mask_zero=False)
         self.cont_embedding.build(real_input_shape)
         self.cont_embedding.built = True
@@ -187,9 +185,11 @@ class OSARLayer(tf.keras.layers.Layer):
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
             bias_constraint=self.bias_constraint,
+            name='generator_attention_objects'
         )
         self.generator_attention_objects.build(real_input_shape)
         self.generator_attention_objects.built = True
+        
 
         self.generator_attention_actions = AttentionGate(
             units=self.units,
@@ -208,6 +208,7 @@ class OSARLayer(tf.keras.layers.Layer):
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
             bias_constraint=self.bias_constraint,
+            name='generator_attention_actions'
         )
         self.generator_attention_actions.build(real_input_shape)
         self.generator_attention_actions.built = True
@@ -217,6 +218,7 @@ class OSARLayer(tf.keras.layers.Layer):
             self.units,
             self.units,
             1,
+            name='reward_memory'
         )
         self.reward_memory.build(
             [(batch_size, 1, 1), (batch_size, 1,)])
@@ -230,7 +232,8 @@ class OSARLayer(tf.keras.layers.Layer):
             kernel_constraint=self.gate_constraint,
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
-            bias_constraint=self.bias_constraint,)
+            bias_constraint=self.bias_constraint,
+            name='object_encoder')
         self.object_encoder.build(
             (batch_size, input_features, input_features))
         self.object_encoder.built = True
@@ -243,7 +246,8 @@ class OSARLayer(tf.keras.layers.Layer):
             kernel_constraint=self.gate_constraint,
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
-            bias_constraint=self.bias_constraint,)
+            bias_constraint=self.bias_constraint,
+            name='action_encoder')
         self.action_encoder.build(
             (batch_size, self.units, self.n_actions))
         self.action_encoder.built = True
@@ -256,9 +260,10 @@ class OSARLayer(tf.keras.layers.Layer):
             kernel_constraint=self.gate_constraint,
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
-            bias_constraint=self.bias_constraint,)
+            bias_constraint=self.bias_constraint,
+            name='reward_encoder')
         self.reward_encoder.build(
-            (batch_size, timesteps, 1))
+            (batch_size, self.units, 1))
         self.reward_encoder.built = True
 
         self.context_encoder = SequenceEncoder1D(
@@ -269,7 +274,8 @@ class OSARLayer(tf.keras.layers.Layer):
             kernel_constraint=self.gate_constraint,
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
-            bias_constraint=self.bias_constraint,)
+            bias_constraint=self.bias_constraint,
+            name='context_encoder')
         self.context_encoder.build(
             (batch_size, self.units, 3*self.units))
         self.context_encoder.built = True
@@ -282,22 +288,25 @@ class OSARLayer(tf.keras.layers.Layer):
             kernel_constraint=self.gate_constraint,
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
-            bias_constraint=self.bias_constraint,)
+            bias_constraint=self.bias_constraint,
+            name='action_mem_view_encoder')
         self.action_mem_view_encoder.build(
             (batch_size, self.n_actions, self.n_actions))
         self.action_mem_view_encoder.built = True
 
-        self.object_caps = Capsule(self.units, self.units, 3, True)
+        self.object_caps = Capsule(self.units, self.units, 1, True,
+                                   name='object_caps')
         self.object_caps.build(
             (batch_size, self.units, self.units))
         self.object_caps.built = True
 
-        self.distib_caps = Capsule(self.units, self.units, 3, True)
+        self.distib_caps = Capsule(self.units, self.units, 1, True,
+                                   name='distib_caps')
         self.distib_caps.build(
             (batch_size, self.units, 3*self.units))
         self.distib_caps.built = True
 
-        self.context_queue = QueueMemory(self.units)
+        self.context_queue = QueueMemory(self.units, name='context_queue')
         self.context_queue.build(
             [
                 (batch_size, self.units, self.units),
@@ -306,7 +315,7 @@ class OSARLayer(tf.keras.layers.Layer):
         )
         self.context_queue.built = True
 
-        self.event_space = GraphMemory()
+        self.event_space = GraphMemory(name='event_space')
         self.event_space.build(
                 (batch_size, self.units, self.units),
         )
@@ -320,7 +329,8 @@ class OSARLayer(tf.keras.layers.Layer):
             kernel_constraint=self.gate_constraint,
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
-            bias_constraint=self.bias_constraint,)
+            bias_constraint=self.bias_constraint,
+            name='object_decoder')
         self.object_decoder.build(
             (batch_size, self.units, self.units))
         self.object_decoder.built = True
@@ -333,20 +343,22 @@ class OSARLayer(tf.keras.layers.Layer):
             kernel_constraint=self.gate_constraint,
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
-            bias_constraint=self.bias_constraint,)
+            bias_constraint=self.bias_constraint,
+            name='action_decoder')
         self.action_decoder.build(
             (batch_size, self.units, self.units))
         self.action_decoder.built = True
 
         self.reward_decoder = SequenceEncoder1D(
             1,
-            timesteps,
+            self.units,
             kernel_initializer=self.gate_initializer,
             kernel_regularizer=self.gate_regularizer,
             kernel_constraint=self.gate_constraint,
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
-            bias_constraint=self.bias_constraint,)
+            bias_constraint=self.bias_constraint,
+            name='reward_decoder')
         self.reward_decoder.build(
             (batch_size, self.units, self.units))
         self.reward_decoder.built = True
@@ -359,7 +371,8 @@ class OSARLayer(tf.keras.layers.Layer):
             kernel_constraint=self.gate_constraint,
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
-            bias_constraint=self.bias_constraint,)
+            bias_constraint=self.bias_constraint,
+            name='context_decoder')
         self.context_decoder.build(
             (batch_size, self.units, self.units))
         self.context_decoder.built = True
@@ -373,6 +386,7 @@ class OSARLayer(tf.keras.layers.Layer):
             bias_regularizer=self.gate_regularizer,
             activity_regularizer=self.gate_regularizer,
             return_sequences=False,
+            name='gru'
         )
         self.gru.build(
                 (batch_size, self.units, 3*self.units),
@@ -388,11 +402,18 @@ class OSARLayer(tf.keras.layers.Layer):
             bias_initializer=self.bias_initializer,
             bias_regularizer=self.bias_regularizer,
             bias_constraint=self.bias_constraint,
+            name='action_selector'
         )
         self.action_selector.build(
             (batch_size, self.units),
         )
         self.action_selector.built = True
+
+        self.context_grad = FiniteDifference(self.units)
+        self.context_grad.build(
+            (batch_size, self.units, 3*self.units)
+        )
+        self.context_grad.built = True
 
         super(OSARLayer, self).build(input_shape)
         self.built = True
@@ -454,102 +475,75 @@ class OSARLayer(tf.keras.layers.Layer):
         reward_input = tf.slice(inputs, [0, inputs.shape[-1]-1],
                                 [inputs.shape[0], 1])
         
-        with tf.GradientTape(persistent=True) as tape:
-            tape.watch(self.variables)
-            object_input = math_ops.cast(object_input, dtype=tf.float32)
-            reward_input = math_ops.cast(
-                reward_input, dtype=tf.float32)  # inputs[1] # (1,)
-            n_digits = tensor_shape.dimension_value(object_input.shape[-1])
-            batch_size = tensor_shape.dimension_value(object_input.shape[0])
+        object_input = math_ops.cast(object_input, dtype=tf.float32)
+        reward_input = math_ops.cast(
+            reward_input, dtype=tf.float32)  # inputs[1] # (1,)
+        n_digits = tensor_shape.dimension_value(object_input.shape[-1])
+        batch_size = tensor_shape.dimension_value(object_input.shape[0])
             
-            memory_lenght = tf.tile(
-                tf.expand_dims(tf.expand_dims(
-                    self.conv_memory_size+self.memory_size, axis=0), axis=0), [batch_size, 1])
+        memory_lenght = tf.tile(
+            tf.expand_dims(tf.expand_dims(
+                self.conv_memory_size+self.memory_size, axis=0), axis=0), [batch_size, 1])
 
-            updated_reward = self.reward_memory([K.expand_dims(reward_input, axis=-1), memory_lenght])
+        updated_reward = self.reward_memory([K.expand_dims(reward_input, axis=-1), memory_lenght])
 
-            # Context generator
-            token_embedding = self.cont_embedding(object_input)
+        # Context generator
+        token_embedding = self.cont_embedding(object_input)
+        object_context = self.generator_attention_objects(token_embedding)
             
-            object_context = self.generator_attention_objects(token_embedding)
+        # Decomposing context into separate features and encoding in R_{self.units} space
+        object_context = tf.keras.layers.Reshape(
+            (input_features, input_features))(object_context)
             
-            # Decomposing context into separate features and encoding in R_{self.units} space
-            object_context = tf.keras.layers.Reshape(
-                (input_features, input_features))(object_context)
+        object_context_en = self.object_encoder(object_context)
             
-            object_context_en = self.object_encoder(object_context)
-            
-            action_mem = self.generator_attention_actions(
-                self.action_mem_view, axis=1)
-            action_mem = self.action_mem_view_encoder(action_mem)
-            if len(action_mem.shape) < 3:
-                action_context = K.expand_dims(action_mem, axis=0)
-            else:
-                action_context = action_mem
+        action_mem = self.generator_attention_actions(
+            self.action_mem_view, axis=1)
+        action_mem = self.action_mem_view_encoder(action_mem)
+        if len(action_mem.shape) < 3:
+            action_context = K.expand_dims(action_mem, axis=0)
+        else:
+            action_context = action_mem
 
-            action_context_en = self.action_encoder(action_context)
-            reward_context_en = self.reward_encoder(updated_reward)
+        action_context_en = self.action_encoder(action_context)
+        reward_context_en = self.reward_encoder(updated_reward)
             
-            context = K.concatenate(
-                [object_context_en, action_context_en, reward_context_en], axis=1)
-            context = K.permute_dimensions(context, (0, 2, 1))
-              # tf.concat(self.variables
-            # object_grad = tape.gradient(
-            #     object_context, object_input)#, axis=-1)
-            # action_grad = tf.concat(tape.gradient(
-            #     action_context, self.variables), axis=-1)
-            # reward_grad = tf.concat(tape.gradient(
-            #     reward_context, self.variables), axis=-1)
-            
-            # grad_context = K.concatenate(
-            #     [object_grad, action_grad, reward_grad], axis=-1)
-            
-            grad_context_shrinked = self.context_encoder(context)#grad_context)
-            decomposed_objects = K.softmax(
-                self.object_caps(grad_context_shrinked))
-            # Updating Importance Queue
-            estimate = self._get_vi_ratio(
-                decomposed_objects[:, -1, ...], decomposed_objects)
-            queue = self.context_queue([object_context_en, estimate])
+        context = K.concatenate(
+            [object_context_en, action_context_en, reward_context_en], axis=1)
+        context = K.permute_dimensions(context, (0, 2, 1))
+        
+        grad_context = self.context_grad(context)
 
-            p_distribution = self.distib_caps(context)#grad_context)
-            target = self.event_space(p_distribution)
-
-            target_probabilities = K.softmax(target)
-            target_q_values = tf.reduce_sum(tf.reduce_sum(
-                self._support * target_probabilities, axis=-1), axis=-1)
+        grad_context_shrinked = self.context_encoder(grad_context)
+        # decomposed_objects = grad_context_shrinked
+        decomposed_objects = K.softmax(
+            self.object_caps(grad_context_shrinked))
+        # Updating Importance Queue
+        estimate = self._get_vi_ratio(
+            decomposed_objects[:, -1, ...], decomposed_objects)
             
-            queue_probability = K.softmax(queue[-1])
-            queue_q_values = tf.reduce_sum(tf.reduce_sum(
-                self._support * queue_probability, axis=-1), axis=-1)
+        queue = self.context_queue([object_context_en, estimate])
+        # p_distribution = self.context_encoder(grad_context)
+        p_distribution = self.distib_caps(grad_context)
+        target = self.event_space(p_distribution)
 
-            if target_q_values <= queue_q_values:
-                target = queue#[-1]
+        target_probabilities = K.softmax(target)
+        target_q_values = tf.reduce_sum(tf.reduce_sum(
+            self._support * target_probabilities, axis=-1), axis=-1)
+            
+        queue_probability = K.softmax(queue[-1])
+        queue_q_values = tf.reduce_sum(tf.reduce_sum(
+            self._support * queue_probability, axis=-1), axis=-1)
+
+        cond = K.less_equal(target_q_values, queue_q_values)
+        target = K.switch(cond, queue, target)
         
         # Repeater
-        # target_grad = tape.gradient(
-        #     target, self.variables)  # [object_input, self.action_mem_view[..., -1, :], reward_input])
-        # Repacking context gradients
-        # object_grad = tape.gradient(
-        #     object_context, self.variables)#object_input)
-        # action_grad = tape.gradient(
-        #     action_context, self.variables)#self.action_mem_view[..., -1, :])
-        # reward_grad = tape.gradient(
-        #     reward_context, self.variables)#reward_input)
         
-        # grad_context = K.concatenate(
-        #     [object_grad, action_grad, reward_grad], axis=-1)
-
-        # objects_grad = grad_context[..., :self.units]
-        # objects_grad = objects_grad + object_context[0, ...] - target
-        # action_grad = target_grad[..., self.units:2*self.units]
-        # reward_grad = grad_context[..., self.units*2:3*self.units]
-        # target_grad_updated = K.concatenate(
-        #     [objects_grad, action_grad, reward_grad], axis=-1)
-        objects = context[:, :, :self.units]
+        objects = grad_context[:, :, :self.units]
         objects = objects - target
-        action = context[:, :, self.units:2*self.units]
-        reward = context[:, :, self.units*2:3*self.units]
+        action = grad_context[:, :, self.units:2*self.units]
+        reward = grad_context[:, :, self.units*2:3*self.units]
         target_updated = K.concatenate(
             [objects, action, reward], axis=-1)
 
@@ -570,8 +564,8 @@ class OSARLayer(tf.keras.layers.Layer):
         self.add_loss(-K.sum(updated_reward, axis=1))
 
         # Constructing GRU input and generating next strategy step:
-        strategy_step = self.gru(target_updated)#target_grad_updated)
-        action = K.expand_dims(self.action_selector(strategy_step)[-1], axis=0)
+        strategy_step = self.gru(target_updated)
+        action = self.action_selector(strategy_step)
         self.add_update(K.update(self.action_mem_view, action))
 
         return action
