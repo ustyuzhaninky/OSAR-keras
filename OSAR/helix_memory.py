@@ -217,7 +217,7 @@ class HelixMemory(tf.keras.layers.Layer):
 
     def call(self, inputs, **kwargs):
         self.k = 0
-        if len(inputs.shape) < 2:
+        if len(inputs.shape) < 3:
             raise ValueError(
                 'The dimension of the input vector'
                 ' should be at least 3D: `(batch_size, timesteps, features)`')
