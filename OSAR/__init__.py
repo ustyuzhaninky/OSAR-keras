@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 name = 'OSAR'
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 from OSAR.context_embedding import *
 from OSAR.helix_memory import *
+from OSAR.graph_attention import *
 from OSAR.gates import *
 from OSAR.OSAR import *
 from OSAR.tfxl import *
