@@ -25,6 +25,7 @@ import numpy as np
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.keras.layers.ops import core as core_ops
 from tensorflow.python.keras.engine.input_spec import InputSpec
+from tensorflow.python.ops import special_math_ops
 from tensorflow import keras
 from tensorflow.python.keras import backend as K
 
@@ -87,21 +88,29 @@ class GraphMemory(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         batch_size = K.cast(input_shape[0], 'int32')
-        encoding_len = K.cast(input_shape[-1], 'int32')
-
+        encoding_len = K.cast(np.prod(input_shape[1:]), 'int32')
+        # if len(input_shape) == 3:
+        #     space_shape = (batch_size, encoding_len, encoding_len, encoding_len, encoding_len)
+        # elif len(input_shape) == 2:
+            
+        # else:
+        #     space_shape = (batch_size,) + \
+        #         self.space.shape[1:] + self.space.shape[1:]
+        
+        space_shape = (batch_size, encoding_len, encoding_len*encoding_len)
         self.space = self.add_weight(
-            shape=(batch_size,) + input_shape[1:] + input_shape[1:],
+            shape=space_shape,
             initializer='zeros',
             trainable=False,
-            name='space',
+            name=f'{self.name}-space',
         )
         self.kernel = self.add_weight(
-            shape=(batch_size,) + input_shape[1:] + input_shape[1:],
+            shape=space_shape,
             initializer=self.kernel_initializer,
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
             trainable=True,
-            name='kernel',
+            name=f'{self.name}-kernel',
         )
 
         if self.use_bias:
@@ -111,7 +120,7 @@ class GraphMemory(tf.keras.layers.Layer):
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
                 trainable=True,
-                name='bias',
+                name=f'{self.name}-bias',
             )
 
         self.I = K.eye(encoding_len, dtype=tf.float32)
@@ -122,50 +131,31 @@ class GraphMemory(tf.keras.layers.Layer):
         operator_2 = tf.linalg.LinearOperatorFullMatrix(self.I)
         operator = tf.linalg.LinearOperatorKronecker([operator_1, operator_2])
         kronecker = operator.to_dense() * 1 / tf.math.sqrt(2.)
-        
-        kronecker = tf.reshape(kronecker, self.space.shape)
-        updated_space = self.space + self.kernel*kronecker
+
+        indexes = 'QWERTYUIOPASDFGHJKLZXCVBNM'[:(len(self.space.shape)-1)]
+        update = self.kernel * kronecker
+        # update = special_math_ops.einsum(
+        #     f'{"b"+indexes},{indexes}->{"b"+indexes}', self.kernel, kronecker)
+        updated_space = self.space + update
         if self.use_bias:
             updated_space = K.bias_add(updated_space, self.bias)
-        # updated_space = K.sigmoid(updated_space)
         
         # Slice space in search of a target
-        indexes = 'QWERTYUIOPASDFGHJKLZXCVBNM'[:len(inputs.shape)-1]
-        target = tf.einsum(
-            f'{"b"+indexes+indexes},{"b"+indexes}->{"b"+indexes}', updated_space, inputs)
-        
+        target = special_math_ops.einsum(
+            f'{"b"+indexes},{"b"+indexes[:-1]}->{"b"+indexes}', updated_space, inputs)
         return target, updated_space
 
     def call(self, inputs, training=False, **kwargs):
         batch_size = K.cast(K.shape(inputs)[0], 'int32')
-        encoding_len = K.cast(K.shape(inputs)[-1], 'int32')
+        encoding_len = K.cast(np.prod(inputs.shape[1:]), 'int32')
+        inputs_rs = K.batch_flatten(inputs)
         
         # Adding updates to space
-        with tf.GradientTape(persistent=True) as tape:
-            tape.watch(self.kernel)
-            tape.watch(self.bias)
-            target, updated_space = self.retrieve(inputs)
-
-            # calculating losses
-            loss = tf.losses.Huber()(
-                target - tf.roll(inputs, shift=self.shift, axis=self.axis), 0)
-
-        # Updating filter and bias so the targeting ops will yield next value
-        grad_kernel = tape.gradient(loss, self.kernel)
-        if self.use_bias:
-            grad_bias = tape.gradient(loss, self.bias)
-
-        # Implementing self-annealing updates if not training:
-        if not training:
-            if self.use_bias:
-                self.add_update(K.update(self.bias, 
-                                         self.bias-self.learning_rate*grad_bias))
-            self.add_update(
-                K.update(self.kernel, self.kernel-self.learning_rate*grad_kernel))
-
+        target, updated_space = self.retrieve(inputs_rs)
+ 
         self.add_update(K.update(self.space, updated_space))
 
-        return target
+        return K.reshape(K.max(K.softmax(target, axis=1), axis=-1), inputs.shape)
 
     def get_config(self):
         config = {

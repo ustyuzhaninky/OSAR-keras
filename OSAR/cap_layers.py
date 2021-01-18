@@ -91,7 +91,7 @@ class Capsule(Layer):
         input_dim_capsule = input_shape[-1]
         if self.share_weights:
             self.kernel = self.add_weight(
-                name='capsule_kernel',
+                name=f'{self.name}-capsule-kernel',
                 shape=(1, input_dim_capsule,
                        self.num_capsule * self.dim_capsule),
                 initializer='glorot_uniform',
@@ -99,7 +99,7 @@ class Capsule(Layer):
         else:
             input_num_capsule = input_shape[-2]
             self.kernel = self.add_weight(
-                name='capsule_kernel',
+                name=f'{self.name}-capsule-kernel',
                 shape=(input_num_capsule, input_dim_capsule,
                        self.num_capsule * self.dim_capsule),
                 initializer='glorot_uniform',
@@ -163,14 +163,14 @@ class Capsule1D(Layer):
         super(Capsule1D, self).build(input_shape)
         input_dim_capsule = input_shape[-1]
         if self.share_weights:
-            self.W = self.add_weight(name='capsule_kernel',
+            self.W = self.add_weight(name=f'{self.name}-capsule-kernel',
                                      shape=(1, input_dim_capsule,
                                             self.num_capsule * self.dim_capsule),
                                      initializer='glorot_uniform',
                                      trainable=True)
         else:
             input_num_capsule = input_shape[-2]
-            self.W = self.add_weight(name='capsule_kernel',
+            self.W = self.add_weight(name=f'{self.name}-capsule-kernel',
                                      shape=(input_num_capsule,
                                             input_dim_capsule,
                                             self.num_capsule * self.dim_capsule),

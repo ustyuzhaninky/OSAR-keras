@@ -68,13 +68,13 @@ class QueueMemory(tf.keras.layers.Layer):
             shape=(batch_size, self.memory_len, input_shape[0][-1]),
             initializer='zeros',
             trainable=False,
-            name='memory',
+            name=f'{self.name}_memory',
         )
         self.index = self.add_weight(
             shape=(batch_size, self.memory_len, 1),
             initializer='zeros',
             trainable=False,
-            name='index',
+            name=f'{self.name}_index',
         )
         super(QueueMemory, self).build(input_shape)
 
@@ -82,6 +82,7 @@ class QueueMemory(tf.keras.layers.Layer):
         inputs, priority = inputs
         batch_size = K.cast(K.shape(inputs)[0], 'int32')
         seq_len = K.cast(K.shape(inputs)[1], 'int32')
+        features = K.cast(K.shape(inputs)[-1], 'int32')
 
         # Build new memory and index
         # priority = K.mean(priority, axis=1)[:, -1]
@@ -97,12 +98,29 @@ class QueueMemory(tf.keras.layers.Layer):
             (0, seq_len, 0),
             (batch_size, self.memory_len, 1),
         )
+
+        # indexes = tf.argsort(
+        #     new_priority, axis=1, direction='ASCENDING')
+        # indexes = K.reshape(indexes, (batch_size*seq_len,))
+        # new_memory = K.reshape(indexes, (batch_size, seq_len, features))
+        # indexes = tf.tile(
+        #     indexes,
+        #     (1, 1, self.memory.shape[-1]),
+        # )
         indexes = K.reshape(new_priority, (new_priority.shape[1],))
         indexes = tf.argsort(indexes, axis=0, direction='ASCENDING')
         new_priority = tf.sort(new_priority, axis=-1, direction='ASCENDING')
         new_memory = tf.gather(new_memory, indexes, axis=1)
+        # new_memory = K.reshape(indexes, (batch_size, seq_len, features))
         self.add_update(K.update(self.index, new_priority))
         self.add_update(K.update(self.memory, new_memory))
+
+        # new_priority = tf.sort(new_priority, axis=1, direction='ASCENDING')
+        # new_memory = K.gather(new_memory, indexes)
+        # print(new_memory.shape)
+        # new_memory = K.reshape(indexes, (batch_size, seq_len, features))
+        # self.add_update(K.update(self.index, new_priority))
+        # self.add_update(K.update(self.memory, new_memory))
 
         return self.memory
 
