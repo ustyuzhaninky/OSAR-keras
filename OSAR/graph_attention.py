@@ -86,7 +86,7 @@ class GraphAttention(tf.keras.layers.Layer):
         batch_dim, seq_len, feature_dim = input_shape[0], input_shape[1], input_shape[2]
         
         self.kernel = self.add_weight(
-            shape=(2 * feature_dim, self.units),
+            shape=(2 * feature_dim,),
             initializer=self.kernel_initializer,
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
@@ -95,7 +95,7 @@ class GraphAttention(tf.keras.layers.Layer):
         )
         if self.use_bias:
             self.bias = self.add_weight(
-                shape=(self.units,),
+                shape=(2 * feature_dim,),
                 initializer=self.bias_initializer,
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
@@ -114,11 +114,11 @@ class GraphAttention(tf.keras.layers.Layer):
             raise ValueError('The last dimension of the first tensor of the inputs'
                             'should be defined. Found `None`.')
 
-        batch_dim, seq_len, feature_dim = inputs.shape[0], inputs.shape[1], inputs.shape[0]
+        batch_dim, seq_len, feature_dim = inputs.shape[0], inputs.shape[1], inputs.shape[2]
 
         concat_inputs = K.concatenate([inputs, inputs], axis=-1)
 
-        inputs_linear = tf.einsum('ijk,km->ijm', concat_inputs, self.kernel)
+        inputs_linear = tf.einsum('ijk,k->ijk', concat_inputs, self.kernel)
         if self.use_bias:
             inputs_linear = nn.bias_add(inputs_linear, self.bias)
         if self.attention_dropout > 0:
@@ -128,7 +128,7 @@ class GraphAttention(tf.keras.layers.Layer):
         
         divisions = K.expand_dims(
             K.sum(K.exp(weighted_inputs), axis=-1), axis=-1)
-        divisions = K.tile(divisions, (1, 1, self.units))
+        divisions = K.tile(divisions, (1, 1, 2*feature_dim))
         importance_levels = K.exp(weighted_inputs) / divisions
         sum_importances = tf.einsum('nij,nik->nij', importance_levels, inputs)
         

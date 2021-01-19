@@ -408,10 +408,10 @@ class AttentionGate(tf.keras.layers.Layer):
             (batch_size, sequence_length, self.units))
         self.permute_1.built = True
 
-        self.permute_2 = tf.keras.layers.Permute((2, 1))
-        self.permute_2.build(
-            (batch_size, output_dim, self.units))
-        self.permute_2.built = True
+        # self.permute_2 = tf.keras.layers.Permute((2, 1))
+        # self.permute_2.build(
+        #     (batch_size, output_dim, self.units))
+        # self.permute_2.built = True
 
         self.seq2seq = tf.keras.layers.GRU(
             self.units,
@@ -422,7 +422,7 @@ class AttentionGate(tf.keras.layers.Layer):
             activation='sigmoid'
             )
         self.seq2seq.build(
-            (batch_size, self.units, output_dim+sequence_length))
+            (batch_size, 2*output_dim, 2*sequence_length))
         self.seq2seq.built = True
 
         super(AttentionGate, self).build(input_shape)
@@ -432,10 +432,11 @@ class AttentionGate(tf.keras.layers.Layer):
         attention_result_ts = self.attention_layer_timesteps(
             self.permute(inputs))
         attention_result_features = self.attention_layer_features(inputs)
+        attention_result_features = self.permute_1(attention_result_features)
         attention_result = tf.keras.layers.Concatenate(axis=-1)(
             [
-                self.permute_1(attention_result_features),
-                self.permute_1(attention_result_ts),
+                attention_result_features,
+                K.reshape(attention_result_ts, attention_result_features.shape),
             ])
         attention_result = self.seq2seq(attention_result)
 
