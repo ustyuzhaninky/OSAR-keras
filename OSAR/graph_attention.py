@@ -124,17 +124,19 @@ class GraphAttention(tf.keras.layers.Layer):
         if self.attention_dropout > 0:
             inputs_linear = nn.dropout_v2(
                 inputs_linear, self.attention_dropout)
-        weighted_inputs = tf.raw_ops.LeakyRelu(features=inputs_linear)
+        score = tf.raw_ops.LeakyRelu(features=inputs_linear)
         
         divisions = K.expand_dims(
-            K.sum(K.exp(weighted_inputs), axis=-1), axis=-1)
+            K.sum(K.exp(score), axis=-1), axis=-1)
         divisions = K.tile(divisions, (1, 1, 2*feature_dim))
-        importance_levels = K.exp(weighted_inputs) / divisions
+        importance_levels = K.exp(score) / divisions
         sum_importances = tf.einsum('nij,nik->nij', importance_levels, inputs)
         
         h = self.activation(sum_importances)
 
-        return h
+        attention_weights = tf.nn.softmax(score, axis=1)
+
+        return h, attention_weights
 
     def get_config(self):
         config = {
