@@ -113,7 +113,8 @@ class HelixMemory(tf.keras.layers.Layer):
             self.filters = self.add_weight(
                 name=f'{self.name}-filter',
                 shape=[self.compression_rate,
-                    n_conv, _out_channels],
+                       output_dim, output_dim
+                    ],
                 dtype=tf.float32,
                 initializer=self.initializer,
                 regularizer=self.regularizer,
@@ -132,42 +133,19 @@ class HelixMemory(tf.keras.layers.Layer):
 
     def _compress(self, inputs):
         
-        padded_input = K.tile(inputs, [1, 1, inputs.shape[1]])
+        # padded_input = K.tile(inputs, [1, 1, inputs.shape[1]])
+        output_dim = inputs.shape[-1]
 
         if self.mode == 'conv':
-            if self.k == 0:
-                k_filter_channels_in = inputs.shape[1]
-                k_filter_channels_out = int(
-                    inputs.shape[1] / self.compression_rate)
-                filter = tf.slice(
-                    self.filters,
-                    (0, self.filters.shape[1] - k_filter_channels_in, 0),
-                    (self.compression_rate, k_filter_channels_in, k_filter_channels_out),
-                    name='filter_slice_0'
-                )
-            else:
-                k_filter_channels_in_start = sum(pow(self.compression_rate, i)
-                                        for i in range(1, self.n_turns - self.k))
-                k_filter_channels_in_end = pow(self.compression_rate, self.n_turns - self.k)
-                k_filter_channels_out = pow(self.compression_rate, self.n_turns - self.k - 1)
-                filter = tf.slice(
-                    self.filters,
-                    (0, k_filter_channels_in_start, k_filter_channels_out),
-                    (self.compression_rate, k_filter_channels_in_end, k_filter_channels_out),
-                    name='filter_slice_1'
-                )
-            compressed = nn.conv1d(padded_input,
-                                filter,
-                                stride=self.compression_rate,
-                                padding='VALID', name='compressed_conv1d')
+            compressed = nn.conv1d(inputs,
+                                   self.filters,# filter,
+                                   stride=self.compression_rate,
+                                   padding='VALID', name='compressed_conv1d')
         elif self.mode == 'avg':
-            compressed = nn.avg_pool1d(padded_input, self.compression_rate, self.compression_rate, padding='VALID')
+            compressed = nn.avg_pool1d(inputs, self.compression_rate, self.compression_rate, padding='VALID')
         elif self.mode == 'max':
             compressed = nn.max_pool1d(
-                padded_input, self.compression_rate, self.compression_rate, padding='VALID')
-        compressed = compressed[..., :inputs.shape[-1]]
-        if len(compressed.shape) < 3:
-            compressed = K.expand_dims(compressed, axis=-1)
+                inputs, self.compression_rate, self.compression_rate, padding='VALID')
         return compressed
     
     def _helix(self, inputs):
