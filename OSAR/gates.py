@@ -361,7 +361,7 @@ class AttentionGate(tf.keras.layers.Layer):
                  bias_initializer='zeros',
                  bias_regularizer=None,
                  bias_constraint=None,
-                 return_probabilities=False
+                 return_probabilities=False,
                  **kwargs):
         super(AttentionGate, self).__init__(**kwargs)
 
@@ -446,9 +446,12 @@ class AttentionGate(tf.keras.layers.Layer):
         attention_result_ts = K.reshape(
             attention_result_ts, attention_result_features.shape)
         attention_weights = attention_weights_ts + attention_weights_features
-
+        
         attention_result = self.seq2seq(attention_result)
-        return attention_result, attention_weights
+        if self.return_probabilities:
+            return attention_result, attention_weights
+        else:
+            return attention_result
     
     def get_config(self):
         config = {
