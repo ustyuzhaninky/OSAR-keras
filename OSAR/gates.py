@@ -324,14 +324,8 @@ class AttentionGate(tf.keras.layers.Layer):
     
     # Arguments
         units: int >= 0. Dimension of hidden units.
-        embed_dim: int > 0. Dimension of the dense embedding.
-        hidden_dim: int > 0. Number of units in the Feed-forward part.
-        num_token: int > 0. Size of the vocabulary.
-        num_head: int > 0. Number of heads in the attention unit.
-        memory_len: int > 0 Number of memory units.
-        n_turns: int > 0. Number of compressed units.
-        compression_rate: int > 0. Rate of memory compression.
-        activation: Activation function to use
+        dropout_rate: 0.0 <= float <= 1.0. Dropout rate for hidden units.
+        attention_dropout: 0.0 <= float <= 1.0. Dropout rate for attention units.
         use_bias: Boolean, whether the layer uses a bias vector.
         kernel_initializer: Initializer for the `kernel` weights matrix.
         bias_initializer: Initializer for the bias vector.
@@ -348,13 +342,14 @@ class AttentionGate(tf.keras.layers.Layer):
         3D tensor with shape: `(batch_size, sequence_length, output_dim)`.
 
     # References
-        - [Transformer-XL](https://arxiv.org/pdf/1901.02860.pdf)
+        - [Graph Networks](http://arxiv.org/abs/2009.05602.pdf)
     """
     
     def __init__(self,
                  units,
                  dropout=0.0,
                  attention_dropout=0.0,
+                 use_bias=True,
                  kernel_initializer='glorot_uniform',
                  kernel_regularizer=None,
                  kernel_constraint=None,
@@ -368,6 +363,7 @@ class AttentionGate(tf.keras.layers.Layer):
         self.units = units
         self.dropout = dropout
         self.attention_dropout = attention_dropout
+        self.use_bias = use_bias
 
         self.kernel_initializer = tf.keras.initializers.get(kernel_initializer)
         self.kernel_regularizer = tf.keras.regularizers.get(kernel_regularizer)
@@ -390,6 +386,7 @@ class AttentionGate(tf.keras.layers.Layer):
 
         self.attention_layer_features = GraphAttention(
             self.units,
+            use_bias=self.use_bias,
             kernel_regularizer=self.kernel_regularizer,
             bias_regularizer=self.bias_regularizer,
             attention_dropout=self.attention_dropout
@@ -397,7 +394,12 @@ class AttentionGate(tf.keras.layers.Layer):
         self.attention_layer_features.build((batch_size, sequence_length, output_dim))
         self.attention_layer_features.built = True
 
-        self.attention_layer_timesteps = GraphAttention(self.units)
+        self.attention_layer_timesteps = GraphAttention(
+            self.units,
+            use_bias=self.use_bias,
+            attention_dropout=self.attention_dropout,
+            kernel_regularizer=self.kernel_regularizer,
+            bias_regularizer=self.bias_regularizer,)
         self.attention_layer_timesteps.build(
             (batch_size, output_dim, sequence_length))
         self.attention_layer_timesteps.built = True
@@ -414,6 +416,7 @@ class AttentionGate(tf.keras.layers.Layer):
 
         self.seq2seq = tf.keras.layers.GRU(
             self.units,
+            use_bias=self.use_bias,
             kernel_regularizer=self.kernel_regularizer,
             bias_regularizer=self.bias_regularizer,
             dropout=self.dropout,
@@ -458,6 +461,7 @@ class AttentionGate(tf.keras.layers.Layer):
             "units": self.units,
             "dropout": self.dropout,
             "attention_dropout": self.attention_dropout,
+            "use_bias": self.use_bias,
             'kernel_initializer': tf.keras.initializers.serialize(self.kernel_initializer),
             'kernel_regularizer': tf.keras.regularizers.serialize(self.kernel_regularizer),
             'kernel_constraint': tf.keras.constraints.serialize(self.kernel_constraint),
