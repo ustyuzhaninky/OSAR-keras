@@ -137,8 +137,11 @@ class HelixMemory(tf.keras.layers.Layer):
         output_dim = inputs.shape[-1]
 
         if self.mode == 'conv':
+            if inputs.shape[1] < self.filters.shape[1]:
+                inputs = K.tile(
+                    inputs, (1, self.filters.shape[1] // inputs.shape[1], 1, 1))
             compressed = nn.conv1d(inputs,
-                                   self.filters,# filter,
+                                   self.filters,
                                    stride=self.compression_rate,
                                    padding='VALID', name='compressed_conv1d')
         elif self.mode == 'avg':
