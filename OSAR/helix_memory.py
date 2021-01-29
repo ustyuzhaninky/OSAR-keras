@@ -135,66 +135,47 @@ class HelixMemory(tf.keras.layers.Layer):
         
         # padded_input = K.tile(inputs, [1, 1, inputs.shape[1]])
         output_dim = inputs.shape[-1]
-
+        rate = inputs.shape[1] if inputs.shape[1] < self.compression_rate else self.compression_rate
+        if inputs.shape[1] < self.compression_rate:
+            inputs = K.tile(
+                inputs, (1, self.compression_rate // inputs.shape[1], 1))
         if self.mode == 'conv':
-            if inputs.shape[1] < self.filters.shape[1]:
-                inputs = K.tile(
-                    inputs, (1, self.filters.shape[1] // inputs.shape[1], 1, 1))
+            
             compressed = nn.conv1d(inputs,
                                    self.filters,
-                                   stride=self.compression_rate,
+                                   stride=rate,
                                    padding='VALID', name='compressed_conv1d')
         elif self.mode == 'avg':
-            compressed = nn.avg_pool1d(inputs, self.compression_rate, self.compression_rate, padding='VALID')
+            compressed = nn.avg_pool1d(
+                inputs, rate, rate, padding='VALID')
         elif self.mode == 'max':
             compressed = nn.max_pool1d(
-                inputs, self.compression_rate, self.compression_rate, padding='VALID')
+                inputs, rate, rate, padding='VALID')
         return compressed
     
     def _helix(self, inputs):
         output_dim = inputs.shape[-1]
-        # turn_start = sum(pow(self.compression_rate, i)
-                        #  for i in range(1, self.n_turns - self.k))
-        turn_end = pow(self.compression_rate, self.n_turns - self.k)
-        turn_start = inputs.shape[1] - turn_end
+        n_long_mem = sum(pow(self.compression_rate, i)
+                         for i in range(1, self.n_turns + 1 - self.k))
+        turn_lenght = pow(self.compression_rate, self.n_turns - self.k)
+        add_lenght = inputs.shape[1] - n_long_mem 
+        # turn_start = inputs.shape[1] - turn_lenght - add_lenght
+        
         # Turn extraction, compression, slice and build
-        helix_k_turn_old = tf.slice(
-            inputs,
-            (0, turn_start, 0),
-            (self.batch_size, turn_end, output_dim),
-            name='helix_turns_new'
-        )
+        helix_k_turn_old = inputs[:, -turn_lenght-add_lenght:-add_lenght, :]
 
         compression = self._compress(helix_k_turn_old)
         compression_lenght = compression.shape[1]
-
-        other_helix = tf.slice(
-            inputs,
-            (0, 0, 0),
-            (self.batch_size, turn_start, output_dim),
-            name='other_helix'
-        )
-
+        
+        other_helix = inputs[:, :-turn_lenght-add_lenght, :]
         new_other_helix = K.concatenate(
             [other_helix, compression],
             axis=1,
         )
-        
-        
-        helix_k_turn_prep = tf.slice(
-            helix_k_turn_old,
-            (0, compression_lenght, 0),
-            (self.batch_size,
-             helix_k_turn_old.shape[1] - compression_lenght, output_dim),
-            name='helix_turns_new'
-        )
 
-        helix_k_turn_new = K.concatenate(
-            [helix_k_turn_prep, compression],
-            axis=1,
-        )
+        helix_k_turn_prep = inputs[:, -turn_lenght:, :]
 
-        return new_other_helix, helix_k_turn_new
+        return new_other_helix, helix_k_turn_prep
 
     def call(self, inputs, **kwargs):
         self.k = 0
@@ -219,31 +200,14 @@ class HelixMemory(tf.keras.layers.Layer):
             [self.memory, inputs], axis=1)
         
         # Separating short and long-term memories
-        short_memory = tf.slice(
-            new_memory,
-            (0, short_mem_start,
-             0),
-            (self.batch_size, self.memory_len,
-             output_dim),
-            name='short_memory'
-        )
-        long_memory = tf.slice(
-            new_memory,
-            (0, 0, 0),
-            (self.batch_size, short_mem_start, output_dim),
-            name='long_memory'
-        )
-        
-        # Shrinking fallout part for the zero turn of the helix
-        fallout = tf.slice(
-            short_memory,
-            (0, 0, 0),
-            (self.batch_size, seq_len, output_dim),
-            name='fallout'
-        )
-        
-        sh_fallout = self._compress(fallout)
 
+        short_memory = new_memory[:, -self.memory_len:, :]
+        long_memory = new_memory[:, :-self.memory_len, :]
+        # Shrinking fallout part for the zero turn of the helix
+        long_memory = long_memory[:, :-seq_len, :]
+        fallout = short_memory[:, -seq_len:, :]
+        sh_fallout = self._compress(fallout)
+        
         long_memory = K.concatenate(
             (long_memory, sh_fallout),
             axis=1,
