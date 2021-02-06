@@ -6,3 +6,4 @@ pydot>=1.4.1
 graphviz>=0.14
 keras-transformer>=0.30.0
 tf_agents>=0.6.0
+gin-config >= 0.1.1
