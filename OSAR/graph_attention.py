@@ -129,7 +129,7 @@ class GraphAttention(tf.keras.layers.Layer):
         divisions = K.expand_dims(
             K.sum(K.exp(score), axis=-1), axis=-1)
         divisions = K.tile(divisions, (1, 1, 2*feature_dim))
-        importance_levels = K.exp(score) / divisions
+        importance_levels = K.softmax(score)#tf.math.divide_no_nan(K.exp(score), divisions)
         sum_importances = tf.einsum('nij,nik->nij', importance_levels, inputs)
         
         h = self.activation(sum_importances)
