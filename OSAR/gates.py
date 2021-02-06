@@ -336,10 +336,10 @@ class AttentionGate(tf.keras.layers.Layer):
         dropout_rate: 0.0 <= float <= 1.0. Dropout rate for hidden units.
 
     # Input shape
-        2D tensor with shape: `(batch_size, sequence_length)`.
+        3D tensor with shape: `(batch_size, sequence_length input_dim)`.
 
     # Output shape
-        3D tensor with shape: `(batch_size, sequence_length, output_dim)`.
+        3D tensor with shape: `(batch_size, sequence_length, units)`.
 
     # References
         - [Graph Networks](http://arxiv.org/abs/2009.05602.pdf)
@@ -421,14 +421,22 @@ class AttentionGate(tf.keras.layers.Layer):
             bias_regularizer=self.bias_regularizer,
             dropout=self.dropout,
             recurrent_dropout=self.dropout,
-            activation='sigmoid'
+            activation='sigmoid',
+            return_sequences=True,
+            name=f'{self.name}-seq2seq'
             )
         self.seq2seq.build(
             (batch_size, 2*output_dim, 2*sequence_length))
         self.seq2seq.built = True
 
+        self.permute_2 = tf.keras.layers.Permute((2, 1))
+        self.permute_2.build(
+            (batch_size, 2*output_dim, 2*sequence_length))
+        self.permute_2.built = True
+
         super(AttentionGate, self).build(input_shape)
     
+    # @tf.function
     def call(self, inputs, **kwargs):
         
         batch_size = inputs.shape[0]
@@ -446,11 +454,12 @@ class AttentionGate(tf.keras.layers.Layer):
             ])
         attention_weights_ts = attention_weights_ts[:, :, -sequence_length:]
         attention_weights_features = attention_weights_features[:, :, -output_dim:]
-        attention_result_ts = K.reshape(
-            attention_result_ts, attention_result_features.shape)
-        attention_weights = attention_weights_ts + attention_weights_features
+        
+        attention_weights = self.permute(
+            attention_weights_ts) + attention_weights_features
         
         attention_result = self.seq2seq(attention_result)
+        attention_result = self.permute_2(attention_result)
         if self.return_probabilities:
             return attention_result, attention_weights
         else:
