@@ -105,14 +105,10 @@ class GraphAttention(tf.keras.layers.Layer):
 
     def call(self, inputs, **kwargs):
         
-        if len(inputs.shape) < 3:
-            raise ValueError(
-                'The dimension of the input vector'
-                ' should be at least 3D: `(batch_size, timesteps, features)`')
-
-        if tensor_shape.dimension_value(inputs.shape[-1]) is None:
-            raise ValueError('The last dimension of the first tensor of the inputs'
-                            'should be defined. Found `None`.')
+        tf.debugging.assert_equal(tf.rank(
+            inputs), 3,
+            message='The dimension of the input vector'
+             ' should be at least 3D: `(batch_size, timesteps, features)`')
 
         batch_dim, seq_len, feature_dim = inputs.shape[0], inputs.shape[1], inputs.shape[2]
 
@@ -126,12 +122,12 @@ class GraphAttention(tf.keras.layers.Layer):
                 inputs_linear, self.attention_dropout)
         score = tf.raw_ops.LeakyRelu(features=inputs_linear)
         
-        divisions = K.expand_dims(
-            K.sum(K.exp(score), axis=-1), axis=-1)
-        divisions = K.tile(divisions, (1, 1, 2*feature_dim))
+        # divisions = K.expand_dims(
+        #     K.sum(K.exp(score), axis=-1), axis=-1)
+        # divisions = K.tile(divisions, (1, 1, 2*feature_dim))
         importance_levels = K.softmax(score)#tf.math.divide_no_nan(K.exp(score), divisions)
-        sum_importances = tf.einsum('nij,nik->nij', importance_levels, inputs)
-        
+        sum_importances = tf.einsum('nij,nik->nik', importance_levels, inputs)
+
         h = self.activation(sum_importances)
 
         attention_weights = tf.nn.softmax(score, axis=1)

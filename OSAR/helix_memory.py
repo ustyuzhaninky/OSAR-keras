@@ -189,7 +189,7 @@ class HelixMemory(tf.keras.layers.Layer):
                             'should be defined. Found `None`.')
         
         batch_size = inputs.shape[0]
-        output_dim = inputs.shape[-1]
+        output_dim = inputs.shape[2]
         seq_len = inputs.shape[1]
 
         long_mem_end = sum(pow(self.compression_rate, i) for i in range(1, self.n_turns))

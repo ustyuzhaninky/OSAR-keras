@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 name = 'OSAR'
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 from OSAR.context_embedding import *
 from OSAR.helix_memory import *
@@ -27,3 +27,4 @@ from OSAR.queue_memory import *
 from OSAR.graph_memory import *
 from OSAR.cap_layers import *
 from OSAR.network import OSARNetwork
+from OSAR.agent import DQNRewardedAgent

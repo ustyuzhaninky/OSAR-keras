@@ -190,10 +190,10 @@ class FiniteDifference(tf.keras.layers.Layer):
 
         mem = tf.tile(
             tf.expand_dims(self.input_memory, axis=0),
-            [batch_size,]+[1 for i in range(len(self.input_memory.shape))])
+            [batch_size, ]+[1 for i in range(tf.rank(self.input_memory))])
         inputs_reshaped = tf.tile(
-            K.reshape(inputs, (batch_size, 1,)+inputs.shape[1:]),
-            [1, self.order, ]+[1 for i in range(len(inputs.shape[1:]))]
+            K.expand_dims(inputs, axis=1),
+            [1, self.order, ]+[1 for i in range(tf.rank(inputs-1))]
         )
         diff = inputs_reshaped - mem
 
@@ -377,7 +377,8 @@ class AttentionGate(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shape):
         batch_size = input_shape[0]
         sequence_length = input_shape[1]
-        return (batch_size, sequence_length, self.units)
+        output_dim = input_shape[2]
+        return (batch_size, sequence_length, output_dim)
 
     def build(self, input_shape):
         batch_size = input_shape[0]
@@ -414,8 +415,13 @@ class AttentionGate(tf.keras.layers.Layer):
             (batch_size, sequence_length, self.units))
         self.permute_1.built = True
 
+        self.permute_2 = tf.keras.layers.Permute((2, 1))
+        self.permute_2.build(
+            (batch_size, 2*output_dim, 2*sequence_length))
+        self.permute_2.built = True
+
         self.seq2seq = tf.keras.layers.GRU(
-            self.units,
+            output_dim,
             use_bias=self.use_bias,
             kernel_regularizer=self.kernel_regularizer,
             bias_regularizer=self.bias_regularizer,
@@ -426,13 +432,8 @@ class AttentionGate(tf.keras.layers.Layer):
             name=f'{self.name}-seq2seq'
             )
         self.seq2seq.build(
-            (batch_size, 2*output_dim, 2*sequence_length))
+            (batch_size, sequence_length, output_dim))
         self.seq2seq.built = True
-
-        self.permute_2 = tf.keras.layers.Permute((2, 1))
-        self.permute_2.build(
-            (batch_size, 2*output_dim, 2*sequence_length))
-        self.permute_2.built = True
 
         super(AttentionGate, self).build(input_shape)
     
@@ -446,12 +447,14 @@ class AttentionGate(tf.keras.layers.Layer):
         attention_result_ts, attention_weights_ts = self.attention_layer_timesteps(
             self.permute(inputs))
         attention_result_features, attention_weights_features = self.attention_layer_features(inputs)
-        attention_result_features = self.permute_1(attention_result_features)
+        
+        # attention_result_features = self.permute_1(attention_result_features)
         attention_result = tf.keras.layers.Concatenate(axis=-1)(
             [
                 attention_result_features,
-                K.reshape(attention_result_ts, attention_result_features.shape),
-            ])
+                self.permute_2(attention_result_ts),
+                # K.reshape(attention_result_ts, attention_result_features.shape),
+            ])[:, :, -output_dim:]
         attention_weights_ts = attention_weights_ts[:, :, -sequence_length:]
         attention_weights_features = attention_weights_features[:, :, -output_dim:]
         
@@ -459,7 +462,6 @@ class AttentionGate(tf.keras.layers.Layer):
             attention_weights_ts) + attention_weights_features
         
         attention_result = self.seq2seq(attention_result)
-        attention_result = self.permute_2(attention_result)
         if self.return_probabilities:
             return attention_result, attention_weights
         else:
