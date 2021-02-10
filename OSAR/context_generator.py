@@ -188,7 +188,7 @@ class ContextGenerator(tf.keras.layers.Layer):
 
         self.built = True
     
-    # @tf.function(experimental_relax_shapes=True)
+    @tf.function
     def call(self, inputs):
         if len(inputs) != 3:
             raise ValueError(
@@ -269,15 +269,12 @@ class ContextGenerator(tf.keras.layers.Layer):
                     distance_rs = tf.norm(diffs_rs)
                     d_state = tf.reduce_mean((distance_ls - distance_rs))
 
-                    # new_item = tf.math.divide_no_nan(C * self.kernel[target_step_index-j-1, target_step_index],
-                    #                                  tf.cast(Nz, tf.float32)*d_state)
+                    # new_item = (
+                    #     C / (tf.cast(Nz, tf.float32) * d_state - self.kernel[i, target_step_index-j-1])) * self.kernel[target_step_index-j-1, target_step_index]
 
                     new_item = (
-                        C / (tf.cast(Nz, tf.float32) * d_state - self.kernel[i, target_step_index-j-1])) * self.kernel[target_step_index-j-1, target_step_index]
-                    #
-                    #)
+                        C / (tf.cast(Nz, tf.float32) * d_state)) * self.kernel[target_step_index-j-1, target_step_index]
 
-                    # new_item = (C / d_state) * self.kernel[target_step_index-j-1, target_step_index] 
 
                     if target_batch_index == 0:
                         new_item = tf.concat(

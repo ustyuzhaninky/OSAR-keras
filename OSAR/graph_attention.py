@@ -122,10 +122,7 @@ class GraphAttention(tf.keras.layers.Layer):
                 inputs_linear, self.attention_dropout)
         score = tf.raw_ops.LeakyRelu(features=inputs_linear)
         
-        # divisions = K.expand_dims(
-        #     K.sum(K.exp(score), axis=-1), axis=-1)
-        # divisions = K.tile(divisions, (1, 1, 2*feature_dim))
-        importance_levels = K.softmax(score)#tf.math.divide_no_nan(K.exp(score), divisions)
+        importance_levels = K.softmax(score)
         sum_importances = tf.einsum('nij,nik->nik', importance_levels, inputs)
 
         h = self.activation(sum_importances)
