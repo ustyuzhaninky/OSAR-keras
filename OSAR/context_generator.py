@@ -267,13 +267,12 @@ class ContextGenerator(tf.keras.layers.Layer):
                     distance_ls = tf.norm(diffs_ls)
                     diffs_rs = target - row_states_rs
                     distance_rs = tf.norm(diffs_rs)
-                    d_state = tf.reduce_mean((distance_ls - distance_rs))
+                    d_state = tf.nn.softmax(tf.reduce_mean(distance_ls - distance_rs))
 
                     # new_item = (
                     #     C / (tf.cast(Nz, tf.float32) * d_state - self.kernel[i, target_step_index-j-1])) * self.kernel[target_step_index-j-1, target_step_index]
 
-                    new_item = (
-                        C / (tf.cast(Nz, tf.float32) * d_state)) * self.kernel[target_step_index-j-1, target_step_index]
+                    new_item = C / d_state  # * self.kernel[target_step_index-j-1, target_step_index]
 
 
                     if target_batch_index == 0:
