@@ -182,7 +182,7 @@ class ContextGenerator(tf.keras.layers.Layer):
             shape=[self.memory_len+self.n_conv, self.memory_len+self.n_conv],
             initializer=self.kernel_initializer,
             regularizer=self.kernel_regularizer,
-            constraint=tf.keras.constraints.MinMaxNorm(-1.0, 1.0),
+            # constraint=tf.keras.constraints.MinMaxNorm(-1.0, 1.0),
             dtype=self.dtype,
             trainable=True)
 
@@ -252,6 +252,8 @@ class ContextGenerator(tf.keras.layers.Layer):
                 def replacerIterator(j, new_rewards):
                     rewards_shape = tf.shape(new_rewards)
                     C = new_rewards[target_batch_index, target_step_index-j]
+                    target = new_rewards[target_batch_index,
+                                         target_step_index]
                     if i == 0:
                         row_states_ls = states[target_batch_index,
                                                target_step_index-j-1]
@@ -267,13 +269,11 @@ class ContextGenerator(tf.keras.layers.Layer):
                     distance_ls = tf.norm(diffs_ls)
                     diffs_rs = target - row_states_rs
                     distance_rs = tf.norm(diffs_rs)
-                    d_state = tf.nn.softmax(tf.reduce_mean(distance_ls - distance_rs))
+                    d_state = tf.keras.losses.huber(distance_ls, distance_rs)
 
-                    # new_item = (
-                    #     C / (tf.cast(Nz, tf.float32) * d_state - self.kernel[i, target_step_index-j-1])) * self.kernel[target_step_index-j-1, target_step_index]
-
-                    new_item = C / d_state  # * self.kernel[target_step_index-j-1, target_step_index]
-
+                    new_item = C * \
+                        self.kernel[target_step_index-j -
+                                    1, target_step_index] / d_state
 
                     if target_batch_index == 0:
                         new_item = tf.concat(
