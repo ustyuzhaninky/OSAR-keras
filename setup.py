@@ -42,7 +42,7 @@ here = path.abspath(path.dirname(__file__))
 
 install_requires = [
                     'importlib-metadata ~= 1.0 ; python_version >= "3.6"',
-                    'tensorflow >= 2.3.0',
+                    'tensorflow >= 2.3.0', 'gin-config >= 0.1.1', 'tf_agents>=0.6.0'
                     ]
 tests_require = ['matplotlib>=3.1.3',
                  'gym >= 0.10.5', 'graphviz >= 0.14',
