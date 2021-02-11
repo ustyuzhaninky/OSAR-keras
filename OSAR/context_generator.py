@@ -270,10 +270,10 @@ class ContextGenerator(tf.keras.layers.Layer):
                     diffs_rs = target - row_states_rs
                     distance_rs = tf.norm(diffs_rs)
                     d_state = tf.keras.losses.huber(distance_ls, distance_rs)
-
-                    new_item = C * \
-                        self.kernel[target_step_index-j -
-                                    1, target_step_index] / d_state
+                    
+                    P = self.kernel[target_step_index-j -
+                                    1, target_step_index]
+                    new_item = C * P / (Nz * d_state + P)
 
                     if target_batch_index == 0:
                         new_item = tf.concat(
