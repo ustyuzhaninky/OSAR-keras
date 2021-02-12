@@ -169,7 +169,12 @@ class OSARNetwork(network.Network):
             bias_regularizer='l2',
             )
 
-        flatten = tf.keras.layers.Flatten()
+        gru = tf.keras.layers.GRU(fc_layer_params[0],
+                                   kernel_regularizer='l2',
+                                   dropout=0.2,
+                                   recurrent_dropout=0.2,
+                                   bias_regularizer='l2',
+                                   )
 
         postprocessing_layers = tf.keras.layers.Dense(
             num_actions,
@@ -184,7 +189,7 @@ class OSARNetwork(network.Network):
 
         self._encoder = input_encoder
         self._context_generator = generator
-        self._flatten = flatten
+        self._repeater = gru
         self._postprocessing_layers = postprocessing_layers
         self._action_memory = self.add_weight(
             shape=(batch_size, 1, num_actions),
@@ -209,7 +214,7 @@ class OSARNetwork(network.Network):
              tf.expand_dims(tf.expand_dims(reward, axis=-1), axis=-1),
              self._action_memory])
 
-        action = self._flatten(context)
+        action = self._repeater(context)
 
         value = self._postprocessing_layers(action, training=training)
         self.add_update(K.update(self._action_memory, K.expand_dims(value, axis=1)
