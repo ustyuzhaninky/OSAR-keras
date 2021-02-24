@@ -28,6 +28,8 @@ from tensorflow.keras import activations
 from tensorflow.keras import backend as K
 from tensorflow.keras.layers import Layer
 
+__all__ = ['Capsule', 'Capsule1D', ]
+
 def squash(x, axis=-1):
     '''Squashing function corresponding to Eq. 1
     Args:
