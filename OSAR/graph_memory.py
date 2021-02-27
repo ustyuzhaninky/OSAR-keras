@@ -36,7 +36,7 @@ from tensorflow.python.ops import nn
 
 from . import Capsule, SequenceEncoder1D
 
-__all__ = ['EventSpace', 'HadamarMixture',]
+__all__ = ['EventSpace', 'KroneckerMixture',]
 
 
 class EventSpace(tf.keras.layers.Layer):
@@ -56,12 +56,17 @@ class EventSpace(tf.keras.layers.Layer):
             bias_regularizer: Regularizer function applied to the bias vector.
             kernel_constraint: Constraint function applied to the `kernel` weights matrix.
             bias_constraint: Constraint function applied to the bias vector.
+            return_space: Boolean. Whether to return space variable or no (default - False).
         
         # Input shape
             ND tensor with shape: `(batch_size, timesteps, output_dim)`.
 
         # Output shape
-            ND tensor with shape: `(batch_size, units, output_dim)`
+            ND tensor with shape: `(batch_size, timesteps, output_dim)`
+                OR
+            ND tensor with shape: `(batch_size, timesteps, output_dim)`
+                AND
+            ND tensor with shape: `(batch_size, timesteps*timesteps, output_dim*output_dim)`
 
         # References
            - None
@@ -79,6 +84,7 @@ class EventSpace(tf.keras.layers.Layer):
         bias_initializer='zeros',
         bias_regularizer='l2',
         bias_constraint=None,
+        return_space=False,
         **kwargs,):
         super(EventSpace, self).__init__(**kwargs)
 
@@ -93,6 +99,7 @@ class EventSpace(tf.keras.layers.Layer):
         self.bias_initializer = tf.keras.initializers.get(bias_initializer)
         self.bias_regularizer = tf.keras.regularizers.get(bias_regularizer)
         self.bias_constraint = tf.keras.constraints.get(bias_constraint)
+        self.return_space = False
 
     def compute_output_shape(self, input_shape):
         batch_dim = tf.cast(input_shape[0], tf.int32)
@@ -122,7 +129,7 @@ class EventSpace(tf.keras.layers.Layer):
         )
 
         self.encoder = SequenceEncoder1D(
-            self.units, self.units,
+            output_dim, seq_dim,
             activation='softmax'
             )
         self.encoder.build(
@@ -137,24 +144,31 @@ class EventSpace(tf.keras.layers.Layer):
         seq_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
         output_dim = tf.cast(tf.shape(inputs)[-1], tf.int32)
 
-        rewards = inputs[..., self.shape[0]:self.shape[-1]]
+        rewards = inputs[..., self.shape[0]:-self.shape[-1]]
+        rewards = K.tile(rewards, (1, 1, seq_dim))
             
         cross_levels = tf.einsum('ijk,ijjkk->ijk',
                             inputs,
                             tf.reshape(self.space, (batch_dim, seq_dim, seq_dim, output_dim, output_dim)))
         cross_levels = tf.raw_ops.LeakyRelu(features=cross_levels)
-            
-        updated_space = HadamarMixture()([cross_levels, inputs])
+        
         filters = self.caps(cross_levels)
         outputs = self.encoder(filters)
 
-        ideal_rewards = self.space[...,  self.shape[0]:-self.shape[-1]]
+        ideal_rewards = K.reshape(
+            self.space, (batch_dim, seq_dim, seq_dim, output_dim, output_dim))
+        ideal_rewards = ideal_rewards[..., self.shape[0]:-self.shape[-1], self.shape[0]:-self.shape[-1]]
         
-        updated_space = self.space*0.99 + updated_space*0.01
+        reward_diff = K.softmax(K.max(K.max(ideal_rewards[..., 0, 0] - rewards, axis=1), axis=1))
+        updated_space = KroneckerMixture()([outputs, inputs]) * reward_diff
+        updated_space = self.space * (1 - reward_diff) + updated_space
 
         self.add_update(K.update(self.space, updated_space))
         
-        return outputs,
+        if self.return_space:
+            return outputs, self.space
+        else:
+            return outputs
     
     def get_config(self):
         config = {
@@ -173,8 +187,8 @@ class EventSpace(tf.keras.layers.Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
-class HadamarMixture(tf.keras.layers.Layer):
-    """Hadamar Mixture layer.
+class KroneckerMixture(tf.keras.layers.Layer):
+    """Kronecker Mixture layer.
 
     # Arguments
         memory_len: int > 0. Maximum memory length.
@@ -192,7 +206,7 @@ class HadamarMixture(tf.keras.layers.Layer):
     """
     
     def __init__(self, **kwargs):
-        super(HadamarMixture, self).__init__(**kwargs)
+        super(KroneckerMixture, self).__init__(**kwargs)
 
         self.supports_masking = True
         self.stateful = True
@@ -204,7 +218,7 @@ class HadamarMixture(tf.keras.layers.Layer):
         batch_size = K.cast(inputs[0].shape[0], 'int32')
         encoding_len = K.cast(inputs[0].shape[-1], 'int32')
         input_1, input_2 = inputs
-
+        
         operator_1 = tf.linalg.LinearOperatorFullMatrix(input_1)
         operator_2 = tf.linalg.LinearOperatorFullMatrix(input_2)
         operator = tf.linalg.LinearOperatorKronecker([operator_1, operator_2])

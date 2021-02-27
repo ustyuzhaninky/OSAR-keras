@@ -292,7 +292,7 @@ class SequenceEncoder1D(tf.keras.layers.Dense):
         if self.use_bias:
             self.bias = self.add_weight(
                 f'{self.name}-bias',
-                shape=[self.units, self.units],
+                shape=[self.timesteps_units, self.feature_units],
                 initializer=self.bias_initializer,
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
