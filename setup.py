@@ -48,8 +48,12 @@ tests_require = ['matplotlib>=3.1.3',
                  'gym >= 0.10.5', 'graphviz >= 0.14',
                  'pydot >= 1.4.1', ]
 
-nosferatu_description = (
+description = (
     'OSAR: An Objective Stimuli Active Repeater')
+
+this_directory = path.abspath(path.dirname(__file__))
+with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
+    long_description = f.read()
 
 setup(
     name='OSAR',
@@ -59,8 +63,9 @@ setup(
     # package_data={'testdata': ['testdata/*.gin']},
     install_requires=install_requires,
     tests_require=tests_require,
-    description=nosferatu_description,
-    long_description=nosferatu_description,
+    description=description,
+    long_description=long_description,
+    long_description_content_type='text/markdown',
     url='https://github.com/ustyuzhaninky/OSAR-keras',  # Optional
     author='Konstantin Ustyuzhanin',  # Optional
     classifiers=[  # Optional
