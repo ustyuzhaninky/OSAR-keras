@@ -29,6 +29,7 @@ import tensorflow as tf
 
 from tf_agents.agents import data_converter
 from tf_agents.agents import tf_agent
+from tf_agents.agents.dqn import dqn_agent
 from tf_agents.networks import network
 from tf_agents.networks import utils as network_utils
 from tf_agents.policies import boltzmann_policy
@@ -68,7 +69,7 @@ def compute_td_targets(next_q_values: types.Tensor,
 
 
 @gin.configurable
-class DQNRewardedAgent(tf_agent.TFAgent):
+class DQNRewardedAgent(dqn_agent.DqnAgent):  # tf_agent.TFAgent):
   """A DQN Agent.
   Implements the DQN algorithm from
   "Human level control through deep reinforcement learning"
@@ -248,11 +249,11 @@ class DQNRewardedAgent(tf_agent.TFAgent):
         action_spec,
         policy,
         collect_policy,
-        train_sequence_length=train_sequence_length,
+        # train_sequence_length=train_sequence_length,
         debug_summaries=debug_summaries,
         summarize_grads_and_vars=summarize_grads_and_vars,
         train_step_counter=train_step_counter,
-        validate_args=False,
+        # validate_args=False,
     )
 
     if q_network.state_spec:
@@ -286,6 +287,10 @@ class DQNRewardedAgent(tf_agent.TFAgent):
 
     self._num_actions = spec.maximum - spec.minimum + 1
 
+  # @property
+  # def trainable_variables(self):
+  #   return self._q_network.trainable_weights
+  
   def _check_network_output(self, net, label):
     """Check outputs of q_net and target_q_net against expected shape.
     Subclasses that require different q_network outputs should override
@@ -355,193 +360,196 @@ class DQNRewardedAgent(tf_agent.TFAgent):
 
       return common.Periodically(update, period, 'periodic_update_targets')
 
-  # Use @common.function in graph mode or for speeding up.
-  def _train(self, experience, weights):
-    with tf.GradientTape() as tape:
-      loss_info = self._loss(
-          experience,
-          td_errors_loss_fn=self._td_errors_loss_fn,
-          gamma=self._gamma,
-          reward_scale_factor=self._reward_scale_factor,
-          weights=weights,
-          training=True)
-    tf.debugging.check_numerics(loss_info.loss, 'Loss is inf or nan')
-    variables_to_train = self._q_network.trainable_weights
-    non_trainable_weights = self._q_network.non_trainable_weights
-    assert list(variables_to_train), "No variables in the agent's q_network."
-    grads = tape.gradient(loss_info.loss, variables_to_train)
-    # Tuple is used for py3, where zip is a generator producing values once.
-    grads_and_vars = list(zip(grads, variables_to_train))
-    if self._gradient_clipping is not None:
-      grads_and_vars = eager_utils.clip_gradient_norms(grads_and_vars,
-                                                       self._gradient_clipping)
+  # # Use @common.function in graph mode or for speeding up.
+  # def _train(self, experience, weights):
+  #   with tf.GradientTape() as tape:
+  #     loss_info = self._loss(
+  #         experience,
+  #         td_errors_loss_fn=self._td_errors_loss_fn,
+  #         gamma=self._gamma,
+  #         reward_scale_factor=self._reward_scale_factor,
+  #         weights=weights,
+  #         training=True)
+  #   tf.debugging.check_numerics(loss_info.loss, 'Loss is inf or nan')
+  #   variables_to_train = self._q_network.trainable_weights
+  #   non_trainable_weights = self._q_network.non_trainable_weights
+  #   assert list(variables_to_train), "No variables in the agent's q_network."
+  #   grads = tape.gradient(loss_info.loss, variables_to_train)
+  #   # Tuple is used for py3, where zip is a generator producing values once.
+  #   grads_and_vars = list(zip(grads, variables_to_train))
+  #   if self._gradient_clipping is not None:
+  #     grads_and_vars = eager_utils.clip_gradient_norms(grads_and_vars,
+  #                                                      self._gradient_clipping)
 
-    if self._summarize_grads_and_vars:
-      grads_and_vars_with_non_trainable = (
-          grads_and_vars + [(None, v) for v in non_trainable_weights])
-      eager_utils.add_variables_summaries(grads_and_vars_with_non_trainable,
-                                          self.train_step_counter)
-      eager_utils.add_gradients_summaries(grads_and_vars,
-                                          self.train_step_counter)
-    self._optimizer.apply_gradients(grads_and_vars)
-    self.train_step_counter.assign_add(1)
+  #   if self._summarize_grads_and_vars:
+  #     grads_and_vars_with_non_trainable = (
+  #         grads_and_vars + [(None, v) for v in non_trainable_weights])
+  #     eager_utils.add_variables_summaries(grads_and_vars_with_non_trainable,
+  #                                         self.train_step_counter)
+  #     eager_utils.add_gradients_summaries(grads_and_vars,
+  #                                         self.train_step_counter)
+  #   self._optimizer.apply_gradients(grads_and_vars)
+  #   self.train_step_counter.assign_add(1)
 
-    self._update_target()
+  #   self._update_target()
 
-    return loss_info
+  #   return loss_info
 
-  def _loss(self,
-            experience,
-            td_errors_loss_fn=common.element_wise_huber_loss,
-            gamma=1.0,
-            reward_scale_factor=1.0,
-            weights=None,
-            training=False):
-    """Computes loss for DQN training.
-    Args:
-      experience: A batch of experience data in the form of a `Trajectory` or
-        `Transition`. The structure of `experience` must match that of
-        `self.collect_policy.step_spec`.
-        If a `Trajectory`, all tensors in `experience` must be shaped
-        `[B, T, ...]` where `T` must be equal to `self.train_sequence_length`
-        if that property is not `None`.
-      td_errors_loss_fn: A function(td_targets, predictions) to compute the
-        element wise loss.
-      gamma: Discount for future rewards.
-      reward_scale_factor: Multiplicative factor to scale rewards.
-      weights: Optional scalar or elementwise (per-batch-entry) importance
-        weights.  The output td_loss will be scaled by these weights, and
-        the final scalar loss is the mean of these values.
-      training: Whether this loss is being used for training.
-    Returns:
-      loss: An instance of `DqnLossInfo`.
-    Raises:
-      ValueError:
-        if the number of actions is greater than 1.
-    """
-    transition = self._as_transition(experience)
-    time_steps, policy_steps, next_time_steps = transition
-    actions = policy_steps.action
+  # def _loss(self,
+  #           experience,
+  #           td_errors_loss_fn=common.element_wise_huber_loss,
+  #           gamma=1.0,
+  #           reward_scale_factor=1.0,
+  #           weights=None,
+  #           training=False):
+  #   """Computes loss for DQN training.
+  #   Args:
+  #     experience: A batch of experience data in the form of a `Trajectory` or
+  #       `Transition`. The structure of `experience` must match that of
+  #       `self.collect_policy.step_spec`.
+  #       If a `Trajectory`, all tensors in `experience` must be shaped
+  #       `[B, T, ...]` where `T` must be equal to `self.train_sequence_length`
+  #       if that property is not `None`.
+  #     td_errors_loss_fn: A function(td_targets, predictions) to compute the
+  #       element wise loss.
+  #     gamma: Discount for future rewards.
+  #     reward_scale_factor: Multiplicative factor to scale rewards.
+  #     weights: Optional scalar or elementwise (per-batch-entry) importance
+  #       weights.  The output td_loss will be scaled by these weights, and
+  #       the final scalar loss is the mean of these values.
+  #     training: Whether this loss is being used for training.
+  #   Returns:
+  #     loss: An instance of `DqnLossInfo`.
+  #   Raises:
+  #     ValueError:
+  #       if the number of actions is greater than 1.
+  #   """
+  #   transition = self._as_transition(experience)
+  #   time_steps, policy_steps, next_time_steps = transition
+  #   actions = policy_steps.action
 
-    with tf.name_scope('loss'):
-      q_values = self._compute_q_values(time_steps, actions, training=training)
+  #   # if weights == None:
+  #   #   weights = self._q_network.trainable_weights[1:]
 
-      next_q_values = self._compute_next_q_values(
-          next_time_steps, policy_steps.info)
+  #   with tf.name_scope('loss'):
+  #     q_values = self._compute_q_values(time_steps, actions, training=training)
 
-      # This applies to any value of n_step_update and also in the RNN-DQN case.
-      # In the RNN-DQN case, inputs and outputs contain a time dimension.
-      td_targets = compute_td_targets(
-          next_q_values,
-          rewards=reward_scale_factor * next_time_steps.reward,
-          discounts=gamma * next_time_steps.discount)
+  #     next_q_values = self._compute_next_q_values(
+  #         next_time_steps, policy_steps.info)
 
-      valid_mask = tf.cast(~time_steps.is_last(), tf.float32)
-      td_error = valid_mask * (td_targets - q_values)
+  #     # This applies to any value of n_step_update and also in the RNN-DQN case.
+  #     # In the RNN-DQN case, inputs and outputs contain a time dimension.
+  #     td_targets = compute_td_targets(
+  #         next_q_values,
+  #         rewards=reward_scale_factor * next_time_steps.reward,
+  #         discounts=gamma * next_time_steps.discount)
 
-      td_loss = valid_mask * td_errors_loss_fn(td_targets, q_values)
+  #     valid_mask = tf.cast(~time_steps.is_last(), tf.float32)
+  #     td_error = valid_mask * (td_targets - q_values)
 
-      if nest_utils.is_batched_nested_tensors(
-              time_steps, self.time_step_spec, num_outer_dims=2):
-        # Do a sum over the time dimension.
-        td_loss = tf.reduce_sum(input_tensor=td_loss, axis=1)
+  #     td_loss = valid_mask * td_errors_loss_fn(td_targets, q_values)
 
-      # Aggregate across the elements of the batch and add regularization loss.
-      # Note: We use an element wise loss above to ensure each element is always
-      #   weighted by 1/N where N is the batch size, even when some of the
-      #   weights are zero due to boundary transitions. Weighting by 1/K where K
-      #   is the actual number of non-zero weight would artificially increase
-      #   their contribution in the loss. Think about what would happen as
-      #   the number of boundary samples increases.
+  #     if nest_utils.is_batched_nested_tensors(
+  #             time_steps, self.time_step_spec, num_outer_dims=2):
+  #       # Do a sum over the time dimension.
+  #       td_loss = tf.reduce_sum(input_tensor=td_loss, axis=1)
 
-      agg_loss = common.aggregate_losses(
-          per_example_loss=td_loss,
-          sample_weight=weights,
-          regularization_loss=self._q_network.losses)
-      total_loss = agg_loss.total_loss
+  #     # Aggregate across the elements of the batch and add regularization loss.
+  #     # Note: We use an element wise loss above to ensure each element is always
+  #     #   weighted by 1/N where N is the batch size, even when some of the
+  #     #   weights are zero due to boundary transitions. Weighting by 1/K where K
+  #     #   is the actual number of non-zero weight would artificially increase
+  #     #   their contribution in the loss. Think about what would happen as
+  #     #   the number of boundary samples increases.
 
-      losses_dict = {'td_loss': agg_loss.weighted,
-                     'reg_loss': agg_loss.regularization,
-                     'total_loss': total_loss}
+  #     agg_loss = common.aggregate_losses(
+  #         per_example_loss=td_loss,
+  #         sample_weight=weights,
+  #         regularization_loss=self._q_network.losses)
+  #     total_loss = agg_loss.total_loss
 
-      common.summarize_scalar_dict(losses_dict,
-                                   step=self.train_step_counter,
-                                   name_scope='Losses/')
+  #     losses_dict = {'td_loss': agg_loss.weighted,
+  #                    'reg_loss': agg_loss.regularization,
+  #                    'total_loss': total_loss}
 
-      if self._summarize_grads_and_vars:
-        with tf.name_scope('Variables/'):
-          for var in self._q_network.trainable_weights:
-            tf.compat.v2.summary.histogram(
-                name=var.name.replace(':', '_'),
-                data=var,
-                step=self.train_step_counter)
+  #     common.summarize_scalar_dict(losses_dict,
+  #                                  step=self.train_step_counter,
+  #                                  name_scope='Losses/')
 
-      if self._debug_summaries:
-        diff_q_values = q_values - next_q_values
-        common.generate_tensor_summaries('td_error', td_error,
-                                         self.train_step_counter)
-        common.generate_tensor_summaries('td_loss', td_loss,
-                                         self.train_step_counter)
-        common.generate_tensor_summaries('q_values', q_values,
-                                         self.train_step_counter)
-        common.generate_tensor_summaries('next_q_values', next_q_values,
-                                         self.train_step_counter)
-        common.generate_tensor_summaries('diff_q_values', diff_q_values,
-                                         self.train_step_counter)
+  #     if self._summarize_grads_and_vars:
+  #       with tf.name_scope('Variables/'):
+  #         for var in self._q_network.trainable_weights:
+  #           tf.compat.v2.summary.histogram(
+  #               name=var.name.replace(':', '_'),
+  #               data=var,
+  #               step=self.train_step_counter)
 
-      return tf_agent.LossInfo(total_loss, DqnLossInfo(td_loss=td_loss,
-                                                       td_error=td_error))
+  #     if self._debug_summaries:
+  #       diff_q_values = q_values - next_q_values
+  #       common.generate_tensor_summaries('td_error', td_error,
+  #                                        self.train_step_counter)
+  #       common.generate_tensor_summaries('td_loss', td_loss,
+  #                                        self.train_step_counter)
+  #       common.generate_tensor_summaries('q_values', q_values,
+  #                                        self.train_step_counter)
+  #       common.generate_tensor_summaries('next_q_values', next_q_values,
+  #                                        self.train_step_counter)
+  #       common.generate_tensor_summaries('diff_q_values', diff_q_values,
+  #                                        self.train_step_counter)
 
-  def _compute_q_values(self, time_steps, actions, training=False):
-    network_observation = time_steps.observation
-    network_reward = time_steps.reward
+  #     return tf_agent.LossInfo(total_loss, DqnLossInfo(td_loss=td_loss,
+  #                                                      td_error=td_error))
 
-    if self._observation_and_action_constraint_splitter is not None:
-      network_observation, _ = self._observation_and_action_constraint_splitter(
-          network_observation)
+  # def _compute_q_values(self, time_steps, actions, training=False):
+  #   network_observation = time_steps.observation
+  #   network_reward = time_steps.reward
 
-    q_values, _ = self._q_network(network_observation, network_reward,
-                                  step_type=time_steps.step_type,
-                                  training=training)
-    # Handle action_spec.shape=(), and shape=(1,) by using the multi_dim_actions
-    # param. Note: assumes len(tf.nest.flatten(action_spec)) == 1.
-    action_spec = cast(tensor_spec.BoundedTensorSpec, self._action_spec)
-    multi_dim_actions = action_spec.shape.rank > 0
-    return common.index_with_actions(
-        q_values,
-        tf.cast(actions, dtype=tf.int32),
-        multi_dim_actions=multi_dim_actions)
+  #   if self._observation_and_action_constraint_splitter is not None:
+  #     network_observation, _ = self._observation_and_action_constraint_splitter(
+  #         network_observation)
 
-  def _compute_next_q_values(self, next_time_steps, info):
-    """Compute the q value of the next state for TD error computation.
-    Args:
-      next_time_steps: A batch of next timesteps
-      info: PolicyStep.info that may be used by other agents inherited from
-        dqn_agent.
-    Returns:
-      A tensor of Q values for the given next state.
-    """
-    network_observation = next_time_steps.observation
-    network_reward = next_time_steps.reward
+  #   q_values, _ = self._q_network(network_observation, network_reward,
+  #                                 step_type=time_steps.step_type,
+  #                                 training=training)
+  #   # Handle action_spec.shape=(), and shape=(1,) by using the multi_dim_actions
+  #   # param. Note: assumes len(tf.nest.flatten(action_spec)) == 1.
+  #   action_spec = cast(tensor_spec.BoundedTensorSpec, self._action_spec)
+  #   multi_dim_actions = action_spec.shape.rank > 0
+  #   return common.index_with_actions(
+  #       q_values,
+  #       tf.cast(actions, dtype=tf.int32),
+  #       multi_dim_actions=multi_dim_actions)
+
+  # def _compute_next_q_values(self, next_time_steps, info):
+  #   """Compute the q value of the next state for TD error computation.
+  #   Args:
+  #     next_time_steps: A batch of next timesteps
+  #     info: PolicyStep.info that may be used by other agents inherited from
+  #       dqn_agent.
+  #   Returns:
+  #     A tensor of Q values for the given next state.
+  #   """
+  #   network_observation = next_time_steps.observation
+  #   network_reward = next_time_steps.reward
     
-    if self._observation_and_action_constraint_splitter is not None:
-      network_observation, _ = self._observation_and_action_constraint_splitter(
-          network_observation)
+  #   if self._observation_and_action_constraint_splitter is not None:
+  #     network_observation, _ = self._observation_and_action_constraint_splitter(
+  #         network_observation)
 
-    next_target_q_values, _ = self._target_q_network(
-        network_observation, network_reward, step_type=next_time_steps.step_type)
-    batch_size = (
-        next_target_q_values.shape[0] or tf.shape(next_target_q_values)[0])
-    dummy_state = self._target_greedy_policy.get_initial_state(batch_size)
-    # Find the greedy actions using our target greedy policy. This ensures that
-    # action constraints are respected and helps centralize the greedy logic.
-    greedy_actions = self._target_greedy_policy.action(
-        next_time_steps, dummy_state).action
+  #   next_target_q_values, _ = self._target_q_network(
+  #       network_observation, network_reward, step_type=next_time_steps.step_type)
+  #   batch_size = (
+  #       next_target_q_values.shape[0] or tf.shape(next_target_q_values)[0])
+  #   dummy_state = self._target_greedy_policy.get_initial_state(batch_size)
+  #   # Find the greedy actions using our target greedy policy. This ensures that
+  #   # action constraints are respected and helps centralize the greedy logic.
+  #   greedy_actions = self._target_greedy_policy.action(
+  #       next_time_steps, dummy_state).action
 
-    # Handle action_spec.shape=(), and shape=(1,) by using the multi_dim_actions
-    # param. Note: assumes len(tf.nest.flatten(action_spec)) == 1.
-    multi_dim_actions = tf.nest.flatten(self._action_spec)[0].shape.rank > 0
-    return common.index_with_actions(
-        next_target_q_values,
-        greedy_actions,
-        multi_dim_actions=multi_dim_actions)
+  #   # Handle action_spec.shape=(), and shape=(1,) by using the multi_dim_actions
+  #   # param. Note: assumes len(tf.nest.flatten(action_spec)) == 1.
+  #   multi_dim_actions = tf.nest.flatten(self._action_spec)[0].shape.rank > 0
+  #   return common.index_with_actions(
+  #       next_target_q_values,
+  #       greedy_actions,
+  #       multi_dim_actions=multi_dim_actions)

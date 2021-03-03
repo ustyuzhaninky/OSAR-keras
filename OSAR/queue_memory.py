@@ -36,36 +36,53 @@ class QueueMemory(tf.keras.layers.Layer):
 
     # Arguments
         memory_len: int > 0. Maximum memory length.
+        kernel_initializer: Initializer for the `kernel` weights matrix.
+        kernel_regularizer: Regularizer function applied to the `kernel` weights matrix.
+        kernel_constraint: Constraint function applied to the `kernel` weights matrix.
 
     # Input shape
-        3D tensor with shape: `(batch_size, sequence_length, output_dim)`.
-        1D tensor with shape: `(batch_size, sequence_length, 1)` represents queue priority value.
+        2D tensor with shape: `(batch_size, feature_dim)` - represents last state.
+        2D tensor with shape: `(batch_size, space_dim)` - represents flattened space dimension.
 
     # Output shape
-        3D tensor with shape: `(batch_size, memory_length, output_dim)`.
+        3D tensor with shape: `(batch_size, 1, output_dim)` - most important member of the queue.
+        3D tensor with shape: `(batch_size, 1, 1)` - importance.
 
     # References
         - None
 
     """
 
-    def __init__(self, memory_len, **kwargs):
+    def __init__(
+        self,
+        memory_len: int,
+        kernel_initializer='glorot_uniform',
+        kernel_regularizer='l2',
+        kernel_constraint=None,
+        **kwargs):
         super(QueueMemory, self).__init__(**kwargs)
 
         self.supports_masking = True
         self.stateful = True
 
         self.memory_len = memory_len
+        self.kernel_initializer = kernel_initializer
+        self.kernel_regularizer = kernel_regularizer
+        self.kernel_constraint = kernel_constraint
         self.index = None
         self.memory = None
 
     def compute_output_shape(self, input_shape):
-        return input_shape[0][0], self.memory_len, input_shape[0][-1]
+        return input_shape[0], self.memory_len, input_shape[-1]
 
     def build(self, input_shape):
         batch_size = K.cast(input_shape[0][0], 'int32')
+        timesteps_dim = 1
+        feature_dim = K.cast(input_shape[0][-1], 'int32')
+        space_dim = K.cast(input_shape[1][-1], 'int32')
+
         self.memory = self.add_weight(
-            shape=(batch_size, self.memory_len, input_shape[0][-1]),
+            shape=(batch_size, self.memory_len, feature_dim),
             initializer='zeros',
             trainable=False,
             name=f'{self.name}_memory',
@@ -76,25 +93,48 @@ class QueueMemory(tf.keras.layers.Layer):
             trainable=False,
             name=f'{self.name}_index',
         )
+
+        self.space_filter = self.add_weight(
+            shape=(space_dim, 1),
+            initializer=self.kernel_initializer,
+            regularizer=self.kernel_regularizer,
+            constraint=self.kernel_constraint,
+            trainable=True,
+            name=f'{self.name}_memory',
+        )
+        self.input_filter = self.add_weight(
+            shape=(feature_dim, 1),
+            initializer=self.kernel_initializer,
+            regularizer=self.kernel_regularizer,
+            constraint=self.kernel_constraint,
+            trainable=True,
+            name=f'{self.name}_memory',
+        )
         super(QueueMemory, self).build(input_shape)
 
+    @tf.function
     def call(self, inputs, **kwargs):
-        inputs, priority = inputs
+        inputs, space = inputs[0], inputs[1]
         batch_size = K.cast(K.shape(inputs)[0], 'int32')
-        seq_len = K.cast(K.shape(inputs)[1], 'int32')
-        features = K.cast(K.shape(inputs)[-1], 'int32')
+        timesteps_dim = 1
+        feature_dim = K.cast(K.shape(inputs)[-1], 'int32')
+        
+        priority = tf.nn.softmax_cross_entropy_with_logits(
+            K.dot(space, self.space_filter),
+            K.dot(inputs, self.input_filter),
+        )
 
         # Build new memory and index
-        new_memory = K.concatenate([self.memory, inputs], axis=1)
-        new_priority = K.concatenate([self.index, priority], axis=1)
+        new_memory = K.concatenate([self.memory, K.expand_dims(inputs, axis=1)], axis=1)
+        new_priority = K.concatenate([self.index, K.expand_dims(K.expand_dims(priority, axis=1))], axis=1)
         new_memory = tf.slice(                                     # (batch_size, self.memory_len, output_dim)
             new_memory,
-            (0, seq_len, 0),
+            (0, timesteps_dim, 0),
             (batch_size, self.memory_len, inputs.shape[-1]),
         )
         new_priority = tf.slice(                                     # (batch_size, self.memory_len, output_dim)
             new_priority,
-            (0, seq_len, 0),
+            (0, timesteps_dim, 0),
             (batch_size, self.memory_len, 1),
         )
 
@@ -105,7 +145,7 @@ class QueueMemory(tf.keras.layers.Layer):
         self.add_update(K.update(self.index, new_priority))
         self.add_update(K.update(self.memory, new_memory))
 
-        return self.memory
+        return self.memory[:, -1, :], self.index[:, -1, :]
 
     def get_config(self):
         config = {

@@ -15,15 +15,14 @@
 __name__ = 'OSAR'
 __version__ = "0.1.5"
 
-from OSAR.context_embedding import *
 from OSAR.helix_memory import *
 from OSAR.graph_attention import *
 from OSAR.context_generator import *
 from OSAR.gates import *
 from OSAR.tfxl import *
 from OSAR.cap_layers import *
-from OSAR.bolzmann_gate import *
 from OSAR.queue_memory import *
 from OSAR.graph_memory import *
+from OSAR.sympathetic_circuit import *
 from OSAR.network import OSARNetwork
 from OSAR.agent import DQNRewardedAgent

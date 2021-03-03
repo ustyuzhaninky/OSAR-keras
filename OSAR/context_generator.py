@@ -40,10 +40,6 @@ class ContextGenerator(tf.keras.layers.Layer):
     
     # Arguments
         units: int >= 0. Dimension of hidden units.
-        embed_dim: int > 0. Dimension of the dense embedding.
-        hidden_dim: int > 0. Number of units in the Feed-forward part.
-        num_token: int > 0. Size of the vocabulary.
-        num_head: int > 0. Number of heads in the attention unit.
         memory_len: int > 0 Number of memory units.
         n_turns: int > 0. Number of compressed units.
         compression_rate: int > 0. Rate of memory compression.
@@ -58,7 +54,7 @@ class ContextGenerator(tf.keras.layers.Layer):
         dropout_rate: 0.0 <= float <= 1.0. Dropout rate for hidden units.
 
     # Input shape
-        2D tensor with shape: `(batch_size, sequence_length)`.
+        2D tensor with shape: `(batch_size, sequence_length, output_dim)`.
 
     # Output shape
         3D tensor with shape: `(batch_size, sequence_length, output_dim)`.

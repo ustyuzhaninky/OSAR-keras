@@ -84,7 +84,7 @@ class EventSpace(tf.keras.layers.Layer):
         bias_initializer='zeros',
         bias_regularizer='l2',
         bias_constraint=None,
-        return_space=False,
+        return_space:bool=False,
         **kwargs,):
         super(EventSpace, self).__init__(**kwargs)
 
@@ -99,7 +99,7 @@ class EventSpace(tf.keras.layers.Layer):
         self.bias_initializer = tf.keras.initializers.get(bias_initializer)
         self.bias_regularizer = tf.keras.regularizers.get(bias_regularizer)
         self.bias_constraint = tf.keras.constraints.get(bias_constraint)
-        self.return_space = False
+        self.return_space = return_space
 
     def compute_output_shape(self, input_shape):
         batch_dim = tf.cast(input_shape[0], tf.int32)
@@ -154,11 +154,11 @@ class EventSpace(tf.keras.layers.Layer):
         
         filters = self.caps(cross_levels)
         outputs = self.encoder(filters)
-
+        
         ideal_rewards = K.reshape(
             self.space, (batch_dim, seq_dim, seq_dim, output_dim, output_dim))
         ideal_rewards = ideal_rewards[..., self.shape[0]:-self.shape[-1], self.shape[0]:-self.shape[-1]]
-        
+
         reward_diff = K.softmax(K.max(K.max(ideal_rewards[..., 0, 0] - rewards, axis=1), axis=1))
         updated_space = KroneckerMixture()([outputs, inputs]) * reward_diff
         updated_space = self.space * (1 - reward_diff) + updated_space

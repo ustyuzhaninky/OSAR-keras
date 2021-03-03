@@ -43,6 +43,7 @@ from tf_agents.utils import nest_utils
 
 from . import ContextGenerator
 from . import Memory
+from . import SympatheticCircuit
 
 """Sample Keras Network with OSAR, based on Q-network:
     https://github.com/tensorflow/agents/blob/v0.7.1/tf_agents/networks/q_network.py#L43-L149 
@@ -176,9 +177,18 @@ class OSARNetwork(network.Network):
                                    bias_regularizer='l2',
                                    )
 
+        circuit = SympatheticCircuit(
+            fc_layer_params[0],
+            (input_fc_layer_params[-1], 1, num_actions),
+            memory_len,
+            kernel_regularizer='l2',
+            dropout=0.2,
+            bias_regularizer='l2',
+        )
+
         postprocessing_layers = tf.keras.layers.Dense(
             num_actions,
-            activation='softmax',
+            # activation='softmax',
             kernel_initializer=tf.random_uniform_initializer(
                 minval=-0.03, maxval=0.03))
 
@@ -189,15 +199,16 @@ class OSARNetwork(network.Network):
 
         self._encoder = input_encoder
         self._context_generator = generator
+        self._circuit = circuit
         self._repeater = gru
         self._postprocessing_layers = postprocessing_layers
         self._action_memory = self.add_weight(
             shape=(batch_size, 1, num_actions),
-            initializer=tf.keras.initializers.get('zeros'),
+            initializer=tf.keras.initializers.get('glorot_uniform'),
             trainable=False,
             name=f'{self.name}-input-memory'
         )
-
+    
     def call(self,
              observation,
              reward=tf.constant([0.0], dtype=tf.float32),
@@ -214,10 +225,13 @@ class OSARNetwork(network.Network):
              tf.expand_dims(tf.expand_dims(reward, axis=-1), axis=-1),
              self._action_memory])
 
-        action = self._repeater(context)
+        distance, importance, context_updated = self._circuit(context)
+        context_updated = K.concatenate([distance, importance, context_updated], axis=-1)
+        
+        action = self._repeater(context_updated)
 
         value = self._postprocessing_layers(action, training=training)
         self.add_update(K.update(self._action_memory, K.expand_dims(value, axis=1)
             ))
 
-        return value, network_state  # tf.squeeze(value, -1), network_state
+        return value, network_state
