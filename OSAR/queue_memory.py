@@ -94,25 +94,25 @@ class QueueMemory(tf.keras.layers.Layer):
             name=f'{self.name}_index',
         )
 
-        self.space_filter = self.add_weight(
-            shape=(space_dim, 1),
-            initializer=self.kernel_initializer,
-            regularizer=self.kernel_regularizer,
-            constraint=self.kernel_constraint,
-            trainable=True,
-            name=f'{self.name}_memory',
-        )
-        self.input_filter = self.add_weight(
-            shape=(feature_dim, 1),
-            initializer=self.kernel_initializer,
-            regularizer=self.kernel_regularizer,
-            constraint=self.kernel_constraint,
-            trainable=True,
-            name=f'{self.name}_memory',
-        )
+        # self.space_filter = self.add_weight(
+        #     shape=(space_dim, 1),
+        #     initializer=self.kernel_initializer,
+        #     regularizer=self.kernel_regularizer,
+        #     constraint=self.kernel_constraint,
+        #     trainable=True,
+        #     name=f'{self.name}_memory',
+        # )
+        # self.input_filter = self.add_weight(
+        #     shape=(feature_dim, 1),
+        #     initializer=self.kernel_initializer,
+        #     regularizer=self.kernel_regularizer,
+        #     constraint=self.kernel_constraint,
+        #     trainable=True,
+        #     name=f'{self.name}_memory',
+        # )
         super(QueueMemory, self).build(input_shape)
 
-    @tf.function
+    # @tf.function
     def call(self, inputs, **kwargs):
         inputs, space = inputs[0], inputs[1]
         batch_size = K.cast(K.shape(inputs)[0], 'int32')
@@ -120,8 +120,8 @@ class QueueMemory(tf.keras.layers.Layer):
         feature_dim = K.cast(K.shape(inputs)[-1], 'int32')
         
         priority = tf.nn.softmax_cross_entropy_with_logits(
-            K.dot(space, self.space_filter),
-            K.dot(inputs, self.input_filter),
+            inputs,#space,  # K.dot(space, self.space_filter),
+            inputs,# K.dot(inputs, self.input_filter),
         )
 
         # Build new memory and index

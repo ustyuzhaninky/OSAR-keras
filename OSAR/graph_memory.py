@@ -130,7 +130,7 @@ class EventSpace(tf.keras.layers.Layer):
 
         self.encoder = SequenceEncoder1D(
             output_dim, seq_dim,
-            activation='softmax'
+            activation='relu'
             )
         self.encoder.build(
             (batch_dim, self.units, self.units))
@@ -138,7 +138,7 @@ class EventSpace(tf.keras.layers.Layer):
                                   
         self.built = True
     
-    @tf.function
+    # @tf.function
     def call(self, inputs, training=False, **kwargs):
         batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
         seq_dim = tf.cast(tf.shape(inputs)[1], tf.int32)

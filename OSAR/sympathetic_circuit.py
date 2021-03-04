@@ -122,7 +122,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
             kernel_regularizer=self.kernel_regularizer,
             )
         self.queue.build(
-            [(batch_dim, feature_dim), (batch_dim, timesteps_dim**2*feature_dim**2)])
+            [(batch_dim, feature_dim), (batch_dim, timesteps_dim*feature_dim)])
         self.queue.built = True
 
         self.built = True
@@ -133,7 +133,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         feature_dim = tf.cast(input_shape[-1], tf.int32)
         return (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, feature_dim)
 
-    @tf.function
+    # @tf.function
     def call(self, inputs):
         batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
         timesteps_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
@@ -141,11 +141,15 @@ class SympatheticCircuit(tf.keras.layers.Layer):
 
         last_step = inputs[:, -1, :]
         output, space = self.event_space(inputs)
-        space = tf.keras.layers.Flatten()(space)
-        target, importance = self.queue([last_step, space])
+        space = K.reshape(space, (batch_dim, timesteps_dim,
+                                  timesteps_dim, feature_dim, feature_dim))
+        space = K.min(K.max(space, axis=1), axis=2)
+        flat_space = tf.keras.layers.Flatten()(space)
+        target, importance = self.queue([last_step, flat_space])
+        target = tf.expand_dims(space[:, -1, :], axis=1)
 
         distance = tf.norm(
-            inputs - tf.tile(tf.expand_dims(target, axis=1), (1, timesteps_dim, 1)),
+            inputs - tf.tile(target, (1, timesteps_dim, 1)),
             axis=-1,
             ord='euclidean',
             keepdims=True)

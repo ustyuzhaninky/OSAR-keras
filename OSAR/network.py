@@ -53,7 +53,7 @@ Implements a network that will generate the following layers:
     [optional]: Conv2D # conv_layer_params
     Flatten
     [optional]: Dense  # input_fc_layer_params
-    [optional]: OSAR   # osar_params
+    [optional]: OSAR   # 
     [optional]: Dense  # output_fc_layer_params
     Dense -> 1         # Value output
 """
@@ -73,7 +73,7 @@ def validate_specs(action_spec, observation_spec):
 
 
 @gin.configurable
-class OSARNetwork(network.Network):
+class OSARNetwork(tf.keras.models.Model):#network.Network):
     """OSAR network."""
 
     """Recurrent value network. Reduces to 1 value output per batch item."""
@@ -87,11 +87,10 @@ class OSARNetwork(network.Network):
                 preprocessing_layers=None,
                 preprocessing_combiner=None,
                 conv_layer_params=None,
-                input_fc_layer_params=(75, 40),
+                input_fc_layer_params=(10, 10),
                 input_dropout_layer_params=None,
-                fc_layer_params=(40,),
-                osar_params=100,
-                output_fc_layer_params=(75, 40),
+                fc_layer_params=(10,),
+                output_fc_layer_params=(10, 10),
                 activation_fn=tf.keras.activations.relu,
                 conv_type='1d',
                 dtype=tf.float32,
@@ -122,7 +121,6 @@ class OSARNetwork(network.Network):
             fc_layer_params: Optional list of fully_connected parameters, where
                 each item is the number of units in the layer. This is applied before
                 the OSAR layers.
-            osar_params: int, number of OSAR units in the corresponding layer
             input_dropout_layer_params: Optional list of dropout layer parameters,
                 where each item is the fraction of input units to drop. The dropout
                 layers are interleaved with the fully connected layers; there is a
@@ -142,7 +140,7 @@ class OSARNetwork(network.Network):
 
         validate_specs(action_spec, input_tensor_spec)
         action_spec = tf.nest.flatten(action_spec)[0]
-        num_actions = action_spec.maximum - action_spec.minimum + 1
+        num_actions = action_spec.maximum - action_spec.minimum# + 1
         encoder_input_tensor_spec = input_tensor_spec
 
         kernel_initializer = tf.compat.v1.variance_scaling_initializer(
@@ -191,10 +189,16 @@ class OSARNetwork(network.Network):
             # activation='softmax',
             kernel_initializer=tf.random_uniform_initializer(
                 minval=-0.03, maxval=0.03))
+        
+        critic_layers = tf.keras.layers.Dense(
+            1,
+            # activation='softmax',
+            kernel_initializer=tf.random_uniform_initializer(
+                minval=-0.03, maxval=0.03))
 
         super(OSARNetwork, self).__init__(
-            input_tensor_spec=input_tensor_spec,
-            state_spec=(),
+            # input_tensor_spec=input_tensor_spec,
+            # state_spec=(),
             name=name)
 
         self._encoder = input_encoder
@@ -202,36 +206,41 @@ class OSARNetwork(network.Network):
         self._circuit = circuit
         self._repeater = gru
         self._postprocessing_layers = postprocessing_layers
+        self._critic_layers = critic_layers
         self._action_memory = self.add_weight(
             shape=(batch_size, 1, num_actions),
             initializer=tf.keras.initializers.get('glorot_uniform'),
             trainable=False,
             name=f'{self.name}-input-memory'
         )
-    
+
     def call(self,
              observation,
              reward=tf.constant([0.0], dtype=tf.float32),
              step_type=None,
              network_state=(),
              training=False):
-
+        
         state, network_state = self._encoder(
             observation, step_type=step_type, network_state=network_state,
             training=training)
-        
+        if tf.rank(state) == 1:
+            state = tf.expand_dims(state, axis=0)
+            reward = tf.expand_dims(reward, axis=-1)
         context = self._context_generator(
-            [tf.expand_dims(state, axis=1),
+            [tf.expand_dims(state, axis=0),
              tf.expand_dims(tf.expand_dims(reward, axis=-1), axis=-1),
              self._action_memory])
 
         distance, importance, context_updated = self._circuit(context)
         context_updated = K.concatenate([distance, importance, context_updated], axis=-1)
-        
+        # distance, context_updated = self._circuit(context)
+        # context_updated = K.concatenate([distance, context_updated], axis=-1)
         action = self._repeater(context_updated)
+        critic = self._critic_layers(action)
 
         value = self._postprocessing_layers(action, training=training)
         self.add_update(K.update(self._action_memory, K.expand_dims(value, axis=1)
-            ))
+            ))        
 
-        return value, network_state
+        return value, critic, network_state
