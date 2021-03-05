@@ -72,7 +72,7 @@ def validate_specs(action_spec, observation_spec):
         'Network only supports action_specs with shape in [(), (1,)])')
 
 @gin.configurable
-class OSARNetwork(tf.keras.models.Model):#network.Network):
+class OSARNetwork(network.Network):#tf.keras.models.Model):
     """OSAR network."""
 
     """Recurrent value network. Reduces to 1 value output per batch item."""
@@ -139,7 +139,7 @@ class OSARNetwork(tf.keras.models.Model):#network.Network):
 
         validate_specs(action_spec, input_tensor_spec)
         action_spec = tf.nest.flatten(action_spec)[0]
-        num_actions = action_spec.maximum - action_spec.minimum# + 1
+        num_actions = action_spec.maximum - action_spec.minimum + 1
         encoder_input_tensor_spec = input_tensor_spec
 
         kernel_initializer = tf.compat.v1.variance_scaling_initializer(
@@ -190,15 +190,15 @@ class OSARNetwork(tf.keras.models.Model):#network.Network):
             kernel_initializer=tf.random_uniform_initializer(
                 minval=-0.03, maxval=0.03))
         
-        critic_layers = tf.keras.layers.Dense(
-            1,
-            # activation='softmax',
-            kernel_initializer=tf.random_uniform_initializer(
-                minval=-0.03, maxval=0.03))
+        # critic_layers = tf.keras.layers.Dense(
+        #     1,
+        #     # activation='softmax',
+        #     kernel_initializer=tf.random_uniform_initializer(
+        #         minval=-0.03, maxval=0.03))
 
         super(OSARNetwork, self).__init__(
-            # input_tensor_spec=input_tensor_spec,
-            # state_spec=(),
+            input_tensor_spec=input_tensor_spec,
+            state_spec=(),
             name=name)
 
         self._encoder = input_encoder
@@ -206,7 +206,7 @@ class OSARNetwork(tf.keras.models.Model):#network.Network):
         self._circuit = circuit
         self._repeater = gru
         self._postprocessing_layers = postprocessing_layers
-        self._critic_layers = critic_layers
+        # self._critic_layers = critic_layers
         self._action_memory = self.add_weight(
             shape=(batch_size, 1, num_actions),
             initializer=tf.keras.initializers.get('glorot_uniform'),
@@ -214,7 +214,7 @@ class OSARNetwork(tf.keras.models.Model):#network.Network):
             name=f'{self.name}-action-memory'
         )
 
-    @tf.function
+    # @tf.function
     def call(self,
              observation,
              reward=tf.constant([0.0], dtype=tf.float32),
@@ -227,8 +227,8 @@ class OSARNetwork(tf.keras.models.Model):#network.Network):
             training=training)
         
         state = tf.expand_dims(state, axis=0)
-        reward = tf.expand_dims(reward, axis=-1)
-
+        reward = tf.expand_dims(tf.expand_dims(reward, axis=-1), axis=-1)
+        
         context = K.concatenate(
             [state,
              self._action_memory,
@@ -241,9 +241,9 @@ class OSARNetwork(tf.keras.models.Model):#network.Network):
         
         context_updated = tf.math.l2_normalize(context_updated, axis=1)
         action = self._repeater(context_updated)
-        critic = self._critic_layers(action)
+        # critic = self._critic_layers(action)
 
         value = self._postprocessing_layers(action, training=training)
         self.add_update(K.update(self._action_memory, K.expand_dims(value, axis=1)))        
 
-        return value, critic, network_state
+        return value, network_state
