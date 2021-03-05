@@ -306,7 +306,7 @@ class SequenceEncoder1D(tf.keras.layers.Dense):
         h = special_math_ops.einsum('ijk,jkmn->imn', inputs, self.kernel)
         if self.use_bias:
             h = K.bias_add(h, self.bias)
-        if self.activation is not None:
+        if self.activation != None:
             h = self.activation(h)
         return h
     

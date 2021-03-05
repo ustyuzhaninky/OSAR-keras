@@ -103,9 +103,9 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         timesteps_dim = tf.cast(input_shape[1], tf.int32)
         feature_dim = tf.cast(input_shape[-1], tf.int32)
 
-        if len(input_shape) != 3:
-            raise ValueError(
-                f'Input requires a vector of shape (batch_size, timesteps, state_features), not {input_shape}.')
+        # if len(input_shape) != 3:
+        #     raise ValueError(
+        #         f'Input requires a vector of shape (batch_size, timesteps, state_features), not {input_shape}.')
 
         self.event_space = EventSpace(
             self.units,
@@ -114,7 +114,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
             bias_regularizer=self.bias_regularizer,
             return_space=True
             )
-        self.event_space.build(input_shape)
+        self.event_space.build((batch_dim, timesteps_dim, feature_dim))
         self.event_space.built = True
         
         self.queue = QueueMemory(
@@ -133,7 +133,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         feature_dim = tf.cast(input_shape[-1], tf.int32)
         return (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, feature_dim)
 
-    # @tf.function
+    @tf.function
     def call(self, inputs):
         batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
         timesteps_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
@@ -143,7 +143,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         output, space = self.event_space(inputs)
         space = K.reshape(space, (batch_dim, timesteps_dim,
                                   timesteps_dim, feature_dim, feature_dim))
-        space = K.min(K.max(space, axis=1), axis=2)
+        space = K.max(K.max(space, axis=1), axis=2)
         flat_space = tf.keras.layers.Flatten()(space)
         target, importance = self.queue([last_step, flat_space])
         target = tf.expand_dims(space[:, -1, :], axis=1)

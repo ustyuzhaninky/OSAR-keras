@@ -138,13 +138,13 @@ class EventSpace(tf.keras.layers.Layer):
                                   
         self.built = True
     
-    # @tf.function
+    @tf.function
     def call(self, inputs, training=False, **kwargs):
         batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
         seq_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
         output_dim = tf.cast(tf.shape(inputs)[-1], tf.int32)
 
-        rewards = inputs[..., self.shape[0]:-self.shape[-1]]
+        rewards = tf.expand_dims(inputs[..., -1], axis=-1)
         rewards = K.tile(rewards, (1, 1, seq_dim))
             
         cross_levels = tf.einsum('ijk,ijjkk->ijk',
@@ -157,8 +157,7 @@ class EventSpace(tf.keras.layers.Layer):
         
         ideal_rewards = K.reshape(
             self.space, (batch_dim, seq_dim, seq_dim, output_dim, output_dim))
-        ideal_rewards = ideal_rewards[..., self.shape[0]:-self.shape[-1], self.shape[0]:-self.shape[-1]]
-
+        ideal_rewards = ideal_rewards[..., -1, -1]
         reward_diff = K.softmax(K.max(K.max(ideal_rewards[..., 0, 0] - rewards, axis=1), axis=1))
         updated_space = KroneckerMixture()([outputs, inputs]) * reward_diff
         updated_space = self.space * (1 - reward_diff) + updated_space

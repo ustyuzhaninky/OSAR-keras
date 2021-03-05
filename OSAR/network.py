@@ -162,6 +162,7 @@ class OSARNetwork(tf.keras.models.Model):#network.Network):
             batch_size=batch_size,
             memory_len=memory_len,
             n_turns=n_turns,
+            n_states=fc_layer_params[0],
             dropout=0.2,
             attention_dropout=0.2,
             kernel_regularizer='l2',
@@ -211,9 +212,10 @@ class OSARNetwork(tf.keras.models.Model):#network.Network):
             shape=(batch_size, 1, num_actions),
             initializer=tf.keras.initializers.get('glorot_uniform'),
             trainable=False,
-            name=f'{self.name}-input-memory'
+            name=f'{self.name}-action-memory'
         )
 
+    @tf.function
     def call(self,
              observation,
              reward=tf.constant([0.0], dtype=tf.float32),
@@ -224,23 +226,24 @@ class OSARNetwork(tf.keras.models.Model):#network.Network):
         state, network_state = self._encoder(
             observation, step_type=step_type, network_state=network_state,
             training=training)
-        if tf.rank(state) == 1:
-            state = tf.expand_dims(state, axis=0)
-            reward = tf.expand_dims(reward, axis=-1)
-        context = self._context_generator(
-            [tf.expand_dims(state, axis=0),
-             tf.expand_dims(tf.expand_dims(reward, axis=-1), axis=-1),
-             self._action_memory])
+        
+        state = tf.expand_dims(state, axis=0)
+        reward = tf.expand_dims(reward, axis=-1)
 
+        context = K.concatenate(
+            [state,
+             self._action_memory,
+             reward], axis=-1)
+        context = tf.nn.l2_normalize(context, axis=-1)
+        context = self._context_generator(context)
         distance, importance, context_updated = self._circuit(context)
-        context_updated = K.concatenate([distance, importance, context_updated], axis=-1)
-        # distance, context_updated = self._circuit(context)
-        # context_updated = K.concatenate([distance, context_updated], axis=-1)
+        context_updated = K.concatenate([context, distance, importance, context_updated], axis=-1)
+        
+        context_updated = tf.nn.l2_normalize(context_updated, axis=-1)
         action = self._repeater(context_updated)
         critic = self._critic_layers(action)
 
         value = self._postprocessing_layers(action, training=training)
-        self.add_update(K.update(self._action_memory, K.expand_dims(value, axis=1)
-            ))        
+        self.add_update(K.update(self._action_memory, K.expand_dims(value, axis=1)))        
 
         return value, critic, network_state

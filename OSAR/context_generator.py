@@ -42,6 +42,7 @@ class ContextGenerator(tf.keras.layers.Layer):
         units: int >= 0. Dimension of hidden units.
         memory_len: int > 0 Number of memory units.
         n_turns: int > 0. Number of compressed units.
+        n_states: int > 0. Number of 'states' in the input vector.
         compression_rate: int > 0. Rate of memory compression.
         activation: Activation function to use
         use_bias: Boolean, whether the layer uses a bias vector.
@@ -68,6 +69,7 @@ class ContextGenerator(tf.keras.layers.Layer):
                  batch_size,
                  memory_len,
                  n_turns,
+                 n_states,
                  compression_rate=2,
                  dropout=0.0,
                  attention_dropout=0.0,
@@ -86,6 +88,7 @@ class ContextGenerator(tf.keras.layers.Layer):
         self.batch_size = batch_size
         self.memory_len = memory_len
         self.n_turns = n_turns
+        self.n_states = n_states
         self.compression_rate = compression_rate
         self.dropout = dropout
         self.attention_dropout = attention_dropout
@@ -102,46 +105,47 @@ class ContextGenerator(tf.keras.layers.Layer):
 
     @tf_utils.shape_type_conversion
     def build(self, input_shape):
-        if len(input_shape) != 3:
-            raise ValueError(
-                f'`ContextGenerator` requires three inputs, not {len(input_shape)}.')
-        batch_dim = input_shape[0][0]
+        # if len(input_shape) != 3:
+        #     raise ValueError(
+        #         f'`ContextGenerator` requires three inputs, not {len(input_shape)}.')
+        batch_dim = input_shape[0]
+        timesteps_dim = input_shape[1]
+        concat_features = input_shape[-1]
+        # if len(input_shape[0]) != 3:
+        #     raise ValueError(
+        #         f'Input 1 requires a vector of shape (batch_size, timesteps, state_features), not {input_shape[0]}.')
+        # if len(input_shape[1]) != 3:
+        #     raise ValueError(
+        #         f'Input 2 requires a vector of shape (batch_size, timesteps, action_features), not {input_shape[1]}.')
+        # if len(input_shape[2]) != 3:
+        #     raise ValueError(
+        #         f'Input 3 requires a vector of shape (batch_size, timesteps, reward_features), not {input_shape[2]}.')
 
-        if len(input_shape[0]) != 3:
-            raise ValueError(
-                f'Input 1 requires a vector of shape (batch_size, timesteps, state_features), not {input_shape[0]}.')
-        if len(input_shape[1]) != 3:
-            raise ValueError(
-                f'Input 2 requires a vector of shape (batch_size, timesteps, action_features), not {input_shape[1]}.')
-        if len(input_shape[2]) != 3:
-            raise ValueError(
-                f'Input 3 requires a vector of shape (batch_size, timesteps, reward_features), not {input_shape[2]}.')
+        # if len(input_shape[1]) != 3:
+        #     raise ValueError(
+        #         f'`ContextGenerator` requires three inputs, not {len(input_shape)}.')
 
-        if len(input_shape[1]) != 3:
-            raise ValueError(
-                f'`ContextGenerator` requires three inputs, not {len(input_shape)}.')
+        # timesteps_dim = input_shape[0][1]
+        # if input_shape[1][1] != timesteps_dim:
+        #     raise ValueError(f'Input 1 got timesteps shape with size {timesteps_dim}'
+        #                      f' while Input 2 got {input_shape[0][1]}: [{timesteps_dim}]!=[{input_shape[0][1]}]')
+        # if input_shape[1][1] != timesteps_dim:
+        #     raise ValueError(f'Input 1 got timesteps shape with size {timesteps_dim}'
+        #                      f' while Input 3 got {input_shape[0][2]}: [{timesteps_dim}]!=[{input_shape[0][2]}]')
+        # features_input_A_dim = input_shape[0][-1]
+        # features_input_B_dim = input_shape[1][-1]
+        # features_input_C_dim = input_shape[2][-1]
 
-        timesteps_dim = input_shape[0][1]
-        if input_shape[1][1] != timesteps_dim:
-            raise ValueError(f'Input 1 got timesteps shape with size {timesteps_dim}'
-                             f' while Input 2 got {input_shape[0][1]}: [{timesteps_dim}]!=[{input_shape[0][1]}]')
-        if input_shape[1][1] != timesteps_dim:
-            raise ValueError(f'Input 1 got timesteps shape with size {timesteps_dim}'
-                             f' while Input 3 got {input_shape[0][2]}: [{timesteps_dim}]!=[{input_shape[0][2]}]')
-        features_input_A_dim = input_shape[0][-1]
-        features_input_B_dim = input_shape[1][-1]
-        features_input_C_dim = input_shape[2][-1]
+        # self.concat = tf.keras.layers.Concatenate(axis=-1)
+        # self.concat.build(
+        #     [
+        #         (batch_dim, timesteps_dim, features_input_A_dim,),
+        #         (batch_dim, timesteps_dim, features_input_B_dim,),
+        #         (batch_dim, timesteps_dim, features_input_C_dim,),
+        #     ])
+        # self.concat.built = True
 
-        self.concat = tf.keras.layers.Concatenate(axis=-1)
-        self.concat.build(
-            [
-                (batch_dim, timesteps_dim, features_input_A_dim,),
-                (batch_dim, timesteps_dim, features_input_B_dim,),
-                (batch_dim, timesteps_dim, features_input_C_dim,),
-            ])
-        self.concat.built = True
-
-        concat_features = features_input_A_dim+features_input_B_dim+features_input_C_dim
+        # concat_features = features_input_A_dim+features_input_B_dim+features_input_C_dim
 
         self.memory = HelixMemory(
             self.batch_size,
@@ -173,162 +177,167 @@ class ContextGenerator(tf.keras.layers.Layer):
             (batch_dim, self.memory_len+self.n_conv, concat_features))
         self.attention.built = True
 
-        self.kernel = self.add_weight(
-            f'{self.name}-kernel',
-            shape=[self.memory_len+self.n_conv, self.memory_len+self.n_conv],
-            initializer=self.kernel_initializer,
-            regularizer=self.kernel_regularizer,
-            # constraint=tf.keras.constraints.MinMaxNorm(-1.0, 1.0),
-            dtype=self.dtype,
-            trainable=True)
+        # self.kernel = self.add_weight(
+        #     f'{self.name}-kernel',
+        #     shape=[self.memory_len+self.n_conv, self.memory_len+self.n_conv],
+        #     initializer=self.kernel_initializer,
+        #     regularizer=self.kernel_regularizer,
+        #     dtype=self.dtype,
+        #     trainable=True)
 
         self.built = True
     
     @tf.function
-    def call(self, inputs):
-        if len(inputs) != 3:
-            raise ValueError(
-                f'`ContextGenerator` requires three inputs, not {len(inputs)}.')
-        batch_dim = tf.shape(inputs[0])[0]
+    def call(self, inputs, **kwargs):
+        # if len(inputs) != 3:
+        #     raise ValueError(
+        #         f'`ContextGenerator` requires three inputs, not {len(inputs)}.')
+        batch_dim = tf.shape(inputs)[0]
+        timesteps_dim = tf.shape(inputs)[1]
+        fatures_dim = tf.shape(inputs)[-1]
+
+        # tf.debugging.assert_equal(tf.rank(
+        #     inputs[0]), 3,
+        #     message=f'Input 1 requires a vector of shape (batch_size, timesteps, state_features), not {inputs[0].shape}.')
         
-        tf.debugging.assert_equal(tf.rank(
-            inputs[0]), 3,
-            message=f'Input 1 requires a vector of shape (batch_size, timesteps, state_features), not {inputs[0].shape}.')
+        # tf.debugging.assert_equal(tf.rank(
+        #     inputs[1]), 3,
+        #     message=f'Input 2 requires a vector of shape (batch_size, timesteps, action_features), not {inputs[1].shape}.')
+
+        # tf.debugging.assert_equal(tf.rank(
+        #     inputs[2]), 3,
+        #     message=f'Input 3 requires a vector of shape (batch_size, timesteps, reward_features), not {inputs[2].shape}.')
+
+        # timesteps_dim = inputs[0].shape[1]
         
-        tf.debugging.assert_equal(tf.rank(
-            inputs[1]), 3,
-            message=f'Input 2 requires a vector of shape (batch_size, timesteps, action_features), not {inputs[1].shape}.')
+        # tf.debugging.assert_equal(tf.shape(
+        #     inputs[1])[1], timesteps_dim,
+        #     message=f'Input 1 got timesteps shape with size {timesteps_dim}'
+        #     f' while Input 2 got {inputs[0].shape[1]}: [{timesteps_dim}]!=[{inputs[0].shape[1]}]')
 
-        tf.debugging.assert_equal(tf.rank(
-            inputs[2]), 3,
-            message=f'Input 3 requires a vector of shape (batch_size, timesteps, reward_features), not {inputs[2].shape}.')
+        # tf.debugging.assert_equal(tf.shape(
+        #     inputs[2])[1], timesteps_dim,
+        #     message=f'Input 1 got timesteps shape with size {timesteps_dim}'
+        #     f' while Input 3 got {inputs[0].shape[2]}: [{timesteps_dim}]!=[{inputs[0].shape[2]}]')
 
-        timesteps_dim = inputs[0].shape[1]
+        # features_input_A_dim = tf.shape(inputs[0])[-1]
+        # features_input_B_dim = tf.shape(inputs[1])[-1]
+        # features_input_C_dim = tf.shape(inputs[2])[-1]
+
+        # context = self.concat(inputs)
         
-        tf.debugging.assert_equal(tf.shape(
-            inputs[1])[1], timesteps_dim,
-            message=f'Input 1 got timesteps shape with size {timesteps_dim}'
-            f' while Input 2 got {inputs[0].shape[1]}: [{timesteps_dim}]!=[{inputs[0].shape[1]}]')
-
-        tf.debugging.assert_equal(tf.shape(
-            inputs[2])[1], timesteps_dim,
-            message=f'Input 1 got timesteps shape with size {timesteps_dim}'
-            f' while Input 3 got {inputs[0].shape[2]}: [{timesteps_dim}]!=[{inputs[0].shape[2]}]')
-
-        features_input_A_dim = tf.shape(inputs[0])[-1]
-        features_input_B_dim = tf.shape(inputs[1])[-1]
-        features_input_C_dim = tf.shape(inputs[2])[-1]
-
-        context = self.concat(inputs)
-        
-        context_mem = self.memory(context)
+        context_mem = self.memory(inputs)
         
         att_mem, probabilities = self.attention(context_mem)
-
         # Calculating decomposition gate
-        states, rewards, actions = att_mem[..., :features_input_A_dim], att_mem[
-            ..., features_input_A_dim:features_input_A_dim+features_input_B_dim], att_mem[..., -features_input_C_dim:]
+        # states, rewards, actions = att_mem[..., :features_input_A_dim], att_mem[
+            # ..., features_input_A_dim:features_input_A_dim+features_input_B_dim], att_mem[..., -features_input_C_dim:]
         
-        new_rewards = rewards[..., -1] #if tf.rank(rewards) == 3 else rewards
-        non_zero_reward_indexes = tf.where(rewards > 0)
+        states = att_mem[:, :, :self.n_states]
+        actions = att_mem[:, :, self.n_states:-1]
+        rewards = att_mem[:, :, -1]
 
-        def loop_fn(i, tg_idx, new_rewards):
+        new_rewards = rewards#[..., -1]
+        # non_zero_reward_indexes = tf.where(rewards > 0)
+
+        # def loop_fn(i, tg_idx, new_rewards):
             
-            target_batch_index = tf.cast(tg_idx[0], tf.int32)
-            target_step_index = tf.cast(tg_idx[-1], tf.int32)
+        #     target_batch_index = tf.cast(tg_idx[0], tf.int32)
+        #     target_step_index = tf.cast(tg_idx[-1], tf.int32)
 
-            Nz = tf.rank(
-                tf.where(new_rewards[target_batch_index, :target_step_index] == 0.0))
-            target = states[target_batch_index, target_step_index]
+        #     Nz = tf.rank(
+        #         tf.where(new_rewards[target_batch_index, :target_step_index] == 0.0))
+        #     target = states[target_batch_index, target_step_index]
 
-            if target_step_index > 0:
+        #     if target_step_index > 0:
 
-                j = tf.constant(0, dtype=tf.int32)
+        #         j = tf.constant(0, dtype=tf.int32)
 
-                def replacerIterator(j, new_rewards):
-                    rewards_shape = tf.shape(new_rewards)
-                    C = new_rewards[target_batch_index, target_step_index-j]
-                    target = new_rewards[target_batch_index,
-                                         target_step_index]
-                    if i == 0:
-                        row_states_ls = states[target_batch_index,
-                                               target_step_index-j-1]
-                        row_states_rs = states[target_batch_index,
-                                               target_step_index]
-                    else:
-                        row_states_ls = states[target_batch_index,
-                                               target_step_index-j-1]
-                        row_states_rs = states[target_batch_index,
-                                               target_step_index]
+        #         def replacerIterator(j, new_rewards):
+        #             rewards_shape = tf.shape(new_rewards)
+        #             C = new_rewards[target_batch_index, target_step_index-j]
+        #             target = new_rewards[target_batch_index,
+        #                                  target_step_index]
+        #             if i == 0:
+        #                 row_states_ls = states[target_batch_index,
+        #                                        target_step_index-j-1]
+        #                 row_states_rs = states[target_batch_index,
+        #                                        target_step_index]
+        #             else:
+        #                 row_states_ls = states[target_batch_index,
+        #                                        target_step_index-j-1]
+        #                 row_states_rs = states[target_batch_index,
+        #                                        target_step_index]
 
-                    diffs_ls = target - row_states_ls
-                    distance_ls = tf.norm(diffs_ls)
-                    diffs_rs = target - row_states_rs
-                    distance_rs = tf.norm(diffs_rs)
-                    d_state = tf.keras.losses.huber(distance_ls, distance_rs)
+        #             diffs_ls = target - row_states_ls
+        #             distance_ls = tf.norm(diffs_ls)
+        #             diffs_rs = target - row_states_rs
+        #             distance_rs = tf.norm(diffs_rs)
+        #             d_state = tf.keras.losses.huber(distance_ls, distance_rs)
                     
-                    P = self.kernel[target_step_index-j -
-                                    1, target_step_index]
-                    new_item = C * P / (Nz * d_state + P)
+        #             P = self.kernel[target_step_index-j -
+        #                             1, target_step_index]
+        #             new_item = C * P / (Nz * d_state + P)
 
-                    if target_batch_index == 0:
-                        new_item = tf.concat(
-                            [[new_item], new_rewards[target_batch_index+1:, target_step_index-j-1]], axis=0)
-                    elif target_batch_index < tf.shape(rewards)[0] - 1:
-                        new_item = tf.concat(
-                            [new_rewards[:target_batch_index, target_step_index-j-1],
-                             [new_item],
-                             new_rewards[target_batch_index+1:, target_step_index-1-j]], axis=0)
-                    else:
-                        new_item = tf.concat(
-                            [new_rewards[:target_batch_index, target_step_index-j-1], [new_item]], axis=0)
+        #             if target_batch_index == 0:
+        #                 new_item = K.concatenate(
+        #                     [[new_item], new_rewards[target_batch_index+1:, target_step_index-j-1]], axis=0)
+        #             elif target_batch_index < tf.shape(rewards)[0] - 1:
+        #                 new_item = K.concatenate(
+        #                     [new_rewards[:target_batch_index, target_step_index-j-1],
+        #                      [new_item],
+        #                      new_rewards[target_batch_index+1:, target_step_index-1-j]], axis=0)
+        #             else:
+        #                 new_item = K.concatenate(
+        #                     [new_rewards[:target_batch_index, target_step_index-j-1], [new_item]], axis=0)
 
-                    new_item = tf.expand_dims(new_item, axis=-1)
+        #             new_item = tf.expand_dims(new_item, axis=-1)
 
-                    if j == Nz:
-                        new_rewards = tf.concat(
-                            [new_item, new_rewards[:, target_step_index-j:]], axis=1)
-                    else:
-                        new_rewards = tf.concat(
-                            [new_rewards[:, :target_step_index-j-1], new_item, new_rewards[:, target_step_index-j:]], axis=1)
+        #             if j == Nz:
+        #                 new_rewards = K.concatenate(
+        #                     [new_item, new_rewards[:, target_step_index-j:]], axis=1)
+        #             else:
+        #                 new_rewards = K.concatenate(
+        #                     [new_rewards[:, :target_step_index-j-1], new_item, new_rewards[:, target_step_index-j:]], axis=1)
                     
-                    return j+1, new_rewards # tf.reshape(new_rewards, rewards_shape)
-                j, new_rewards = tf.while_loop(
-                    lambda j, new_rewards: j < Nz,
-                    replacerIterator,
-                    [j, new_rewards],
-                )
+        #             return j+1, new_rewards # tf.reshape(new_rewards, rewards_shape)
+        #         j, new_rewards = tf.while_loop(
+        #             lambda j, new_rewards: j < Nz,
+        #             replacerIterator,
+        #             [j, new_rewards],
+        #         )
 
-                return (i+1, non_zero_reward_indexes[i+1], new_rewards)
-            else:
-                return (i+1, non_zero_reward_indexes[i+1], new_rewards)
+        #         return (i+1, non_zero_reward_indexes[i+1], new_rewards)
+        #     else:
+        #         return (i+1, non_zero_reward_indexes[i+1], new_rewards)
             
-        def false_fn(new_rewards):
-            i = tf.constant(0, dtype=tf.int32)
-            tf_idx = non_zero_reward_indexes[i]
+        # def false_fn(new_rewards):
+        #     i = tf.constant(0, dtype=tf.int32)
+        #     tf_idx = non_zero_reward_indexes[i]
             
-            i, tf_idx, new_rewards = tf.while_loop(
-                lambda i, tf_idx, new_rewards: tf.less(
-                    i, tf.cast(tf.shape(non_zero_reward_indexes)[0], tf.int32)-1),
-                loop_fn,
-                [i, tf_idx, new_rewards]
-            )
+        #     i, tf_idx, new_rewards = tf.while_loop(
+        #         lambda i, tf_idx, new_rewards: tf.less(
+        #             i, tf.cast(tf.shape(non_zero_reward_indexes)[0], tf.int32)-1),
+        #         loop_fn,
+        #         [i, tf_idx, new_rewards]
+        #     )
 
-            return new_rewards
+        #     return new_rewards
 
-        new_rewards = tf.einsum('in,nn->in', new_rewards, self.kernel)
+        # new_rewards = tf.einsum('in,nn->in', new_rewards, self.kernel)
         
-        if non_zero_reward_indexes.shape[0] is not None and non_zero_reward_indexes.shape[0] != 0:
-            new_rewards = false_fn(new_rewards)
-            new_rewards = K.reshape(new_rewards, (rewards.shape[0], rewards.shape[1]))
-        new_rewards = K.expand_dims(new_rewards, axis=-1)
+        # if non_zero_reward_indexes.shape[0] != None and non_zero_reward_indexes.shape[0] != 0:
+        #     new_rewards = false_fn(new_rewards)
+        #     new_rewards = K.reshape(new_rewards, (rewards.shape[0], rewards.shape[1]))
+        # new_rewards = K.expand_dims(new_rewards, axis=-1)
 
-        redacted_memory = K.concatenate(
-            [states, new_rewards, actions],
-            axis=-1
-        )
+        # redacted_memory = K.concatenate(
+        #     [states, actions, new_rewards],
+        #     axis=-1
+        # )
 
-        return redacted_memory
+        # return redacted_memory
+        return att_mem
     
     def get_config(self):
         config = {
