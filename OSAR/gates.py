@@ -437,7 +437,7 @@ class AttentionGate(tf.keras.layers.Layer):
 
         super(AttentionGate, self).build(input_shape)
     
-    # @tf.function
+    @tf.function
     def call(self, inputs, **kwargs):
         
         batch_size = inputs.shape[0]
@@ -448,12 +448,10 @@ class AttentionGate(tf.keras.layers.Layer):
             self.permute(inputs))
         attention_result_features, attention_weights_features = self.attention_layer_features(inputs)
         
-        # attention_result_features = self.permute_1(attention_result_features)
         attention_result = tf.keras.layers.Concatenate(axis=-1)(
             [
                 attention_result_features,
                 self.permute_2(attention_result_ts),
-                # K.reshape(attention_result_ts, attention_result_features.shape),
             ])[:, :, -output_dim:]
         attention_weights_ts = attention_weights_ts[:, :, -sequence_length:]
         attention_weights_features = attention_weights_features[:, :, -output_dim:]

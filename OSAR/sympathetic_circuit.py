@@ -156,7 +156,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         importance = tf.tile(tf.expand_dims(
             importance, axis=1), (1, timesteps_dim, 1))
         
-        return distance, importance, output,
+        return distance, importance, output
 
     def get_config(self):
         config = {

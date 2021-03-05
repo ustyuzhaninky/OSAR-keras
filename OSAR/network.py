@@ -71,7 +71,6 @@ def validate_specs(action_spec, observation_spec):
     raise ValueError(
         'Network only supports action_specs with shape in [(), (1,)])')
 
-
 @gin.configurable
 class OSARNetwork(tf.keras.models.Model):#network.Network):
     """OSAR network."""
@@ -234,12 +233,13 @@ class OSARNetwork(tf.keras.models.Model):#network.Network):
             [state,
              self._action_memory,
              reward], axis=-1)
-        context = tf.nn.l2_normalize(context, axis=-1)
+        context = tf.math.l2_normalize(context, axis=1)
         context = self._context_generator(context)
+        context = tf.math.l2_normalize(context, axis=1)
         distance, importance, context_updated = self._circuit(context)
-        context_updated = K.concatenate([context, distance, importance, context_updated], axis=-1)
+        context_updated = K.concatenate([distance, importance, context_updated], axis=-1)
         
-        context_updated = tf.nn.l2_normalize(context_updated, axis=-1)
+        context_updated = tf.math.l2_normalize(context_updated, axis=1)
         action = self._repeater(context_updated)
         critic = self._critic_layers(action)
 
