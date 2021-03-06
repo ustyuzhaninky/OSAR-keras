@@ -426,9 +426,10 @@ class AttentionGate(tf.keras.layers.Layer):
             kernel_regularizer=self.kernel_regularizer,
             bias_regularizer=self.bias_regularizer,
             dropout=self.dropout,
-            recurrent_dropout=self.dropout,
-            activation='sigmoid',
+            recurrent_dropout=0,
             return_sequences=True,
+            reset_after=True,
+            unroll=False,
             name=f'{self.name}-seq2seq'
             )
         self.seq2seq.build(

@@ -233,6 +233,8 @@ class ContextGenerator(tf.keras.layers.Layer):
                     lambda j, new_rewards: j < Nz,
                     replacerIterator,
                     [j, new_rewards],
+                    swap_memory=True,
+                    # parallel_iterations=100,
                 )
 
                 return (i+1, non_zero_reward_indexes[i+1], new_rewards)
@@ -247,7 +249,9 @@ class ContextGenerator(tf.keras.layers.Layer):
                 lambda i, tf_idx, new_rewards: tf.less(
                     i, tf.cast(tf.shape(non_zero_reward_indexes)[0], tf.int32)-1),
                 loop_fn,
-                [i, tf_idx, new_rewards]
+                [i, tf_idx, new_rewards],
+                swap_memory=True,
+                # parallel_iterations=100,
             )
 
             return new_rewards

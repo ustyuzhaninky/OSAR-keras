@@ -145,16 +145,19 @@ class OSARNetwork(network.Network):#tf.keras.models.Model):
         kernel_initializer = tf.compat.v1.variance_scaling_initializer(
           scale=2.0, mode='fan_in', distribution='truncated_normal')
 
-        input_encoder = encoding_network.EncodingNetwork(
-            encoder_input_tensor_spec,
-            preprocessing_layers=preprocessing_layers,
-            preprocessing_combiner=preprocessing_combiner,
-            conv_layer_params=conv_layer_params,
-            fc_layer_params=input_fc_layer_params,
-            activation_fn=activation_fn,
-            kernel_initializer=kernel_initializer,
-            conv_type=conv_type,
-            dtype=dtype)
+        # input_encoder = encoding_network.EncodingNetwork(
+        #     encoder_input_tensor_spec,
+        #     preprocessing_layers=preprocessing_layers,
+        #     preprocessing_combiner=preprocessing_combiner,
+        #     conv_layer_params=conv_layer_params,
+        #     fc_layer_params=input_fc_layer_params,
+        #     activation_fn=activation_fn,
+        #     kernel_initializer=kernel_initializer,
+        #     conv_type=conv_type,
+        #     dtype=dtype)
+        input_encoder = tf.keras.layers.Dense(
+            input_fc_layer_params[0],
+            )
         
         generator = ContextGenerator(
             units=fc_layer_params[0],
@@ -171,8 +174,11 @@ class OSARNetwork(network.Network):#tf.keras.models.Model):
         gru = tf.keras.layers.GRU(fc_layer_params[0],
                                    kernel_regularizer='l2',
                                    dropout=0.2,
-                                   recurrent_dropout=0.2,
+                                   recurrent_dropout=0,
                                    bias_regularizer='l2',
+                                   reset_after=True,
+                                   unroll=False,
+                                   name='gru'
                                    )
 
         circuit = SympatheticCircuit(
@@ -211,7 +217,7 @@ class OSARNetwork(network.Network):#tf.keras.models.Model):
             shape=(batch_size, 1, num_actions),
             initializer=tf.keras.initializers.get('glorot_uniform'),
             trainable=False,
-            name=f'{self.name}-action-memory'
+            name='action-memory'
         )
 
     # @tf.function
@@ -222,9 +228,10 @@ class OSARNetwork(network.Network):#tf.keras.models.Model):
              network_state=(),
              training=False):
         
-        state, network_state = self._encoder(
-            observation, step_type=step_type, network_state=network_state,
-            training=training)
+        # state, network_state = self._encoder(
+        #     observation, step_type=step_type, network_state=network_state,
+        #     training=training)
+        state = self._encoder(observation)
         
         state = tf.expand_dims(state, axis=0)
         reward = tf.expand_dims(tf.expand_dims(reward, axis=-1), axis=-1)
