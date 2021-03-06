@@ -145,19 +145,16 @@ class OSARNetwork(network.Network):#tf.keras.models.Model):
         kernel_initializer = tf.compat.v1.variance_scaling_initializer(
           scale=2.0, mode='fan_in', distribution='truncated_normal')
 
-        # input_encoder = encoding_network.EncodingNetwork(
-        #     encoder_input_tensor_spec,
-        #     preprocessing_layers=preprocessing_layers,
-        #     preprocessing_combiner=preprocessing_combiner,
-        #     conv_layer_params=conv_layer_params,
-        #     fc_layer_params=input_fc_layer_params,
-        #     activation_fn=activation_fn,
-        #     kernel_initializer=kernel_initializer,
-        #     conv_type=conv_type,
-        #     dtype=dtype)
-        input_encoder = tf.keras.layers.Dense(
-            input_fc_layer_params[0],
-            )
+        input_encoder = encoding_network.EncodingNetwork(
+            encoder_input_tensor_spec,
+            preprocessing_layers=preprocessing_layers,
+            preprocessing_combiner=preprocessing_combiner,
+            conv_layer_params=conv_layer_params,
+            fc_layer_params=input_fc_layer_params,
+            activation_fn=activation_fn,
+            kernel_initializer=kernel_initializer,
+            conv_type=conv_type,
+            dtype=dtype)
         
         generator = ContextGenerator(
             units=fc_layer_params[0],
@@ -195,12 +192,6 @@ class OSARNetwork(network.Network):#tf.keras.models.Model):
             # activation='softmax',
             kernel_initializer=tf.random_uniform_initializer(
                 minval=-0.03, maxval=0.03))
-        
-        # critic_layers = tf.keras.layers.Dense(
-        #     1,
-        #     # activation='softmax',
-        #     kernel_initializer=tf.random_uniform_initializer(
-        #         minval=-0.03, maxval=0.03))
 
         super(OSARNetwork, self).__init__(
             input_tensor_spec=input_tensor_spec,
@@ -228,10 +219,9 @@ class OSARNetwork(network.Network):#tf.keras.models.Model):
              network_state=(),
              training=False):
         
-        # state, network_state = self._encoder(
-        #     observation, step_type=step_type, network_state=network_state,
-        #     training=training)
-        state = self._encoder(observation)
+        state, network_state = self._encoder(
+            observation, step_type=step_type, network_state=network_state,
+            training=training)
         
         state = tf.expand_dims(state, axis=0)
         reward = tf.expand_dims(tf.expand_dims(reward, axis=-1), axis=-1)
@@ -248,7 +238,6 @@ class OSARNetwork(network.Network):#tf.keras.models.Model):
         
         context_updated = tf.math.l2_normalize(context_updated, axis=1)
         action = self._repeater(context_updated)
-        # critic = self._critic_layers(action)
 
         value = self._postprocessing_layers(action, training=training)
         self.add_update(K.update(self._action_memory, K.expand_dims(value, axis=1)))        
