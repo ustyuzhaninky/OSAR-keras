@@ -40,6 +40,8 @@ from tf_agents.networks import network
 from tf_agents.specs import tensor_spec
 from tf_agents.trajectories import time_step
 from tf_agents.utils import nest_utils
+from tf_agents.networks import categorical_q_network
+from tf_agents.networks import utils as network_utils
 
 from . import ContextGenerator
 from . import Memory
@@ -72,7 +74,7 @@ def validate_specs(action_spec, observation_spec):
         'Network only supports action_specs with shape in [(), (1,)])')
 
 @gin.configurable
-class OSARNetwork(network.Network):#tf.keras.models.Model):
+class OSARNetwork(categorical_q_network.CategoricalQNetwork):# network.Network):#tf.keras.models.Model):
     """OSAR network."""
 
     """Recurrent value network. Reduces to 1 value output per batch item."""
@@ -82,58 +84,51 @@ class OSARNetwork(network.Network):#tf.keras.models.Model):
                 action_spec,
                 batch_size,
                 memory_len=10,
+                num_atoms=51,
                 n_turns=3,
                 preprocessing_layers=None,
                 preprocessing_combiner=None,
                 conv_layer_params=None,
+                activation_fn=tf.nn.relu,
                 input_fc_layer_params=(10, 10),
                 input_dropout_layer_params=None,
                 fc_layer_params=(10,),
                 output_fc_layer_params=(10, 10),
-                activation_fn=tf.keras.activations.relu,
                 conv_type='1d',
                 dtype=tf.float32,
                  name='OSARNetwork'):
         """Creates an instance of `OSARNetwork`.
-        Network supports calls with shape outer_rank + input_tensor_shape.shape.
-        Note outer_rank must be at least 1.
+        The logits output by __call__ will ultimately have a shape of
+        `[batch_size, num_actions, num_atoms]`, where `num_actions` is computed as
+        `action_spec.maximum - action_spec.minimum + 1`. Each value is a logit for
+        a particular action at a particular atom (see above).
+        As an example, if
+        `action_spec = tensor_spec.BoundedTensorSpec([1], tf.int32, 0, 4)` and
+        `num_atoms = 51`, the logits will have a shape of `[batch_size, 5, 51]`.
         Args:
-            input_tensor_spec: A nest of `tensor_spec.TensorSpec` representing the
-                input observations.
-            action_spec: A nest of `tensor_spec.BoundedTensorSpec` representing the
-                actions.
-            batch_size: integer, a size of the batch,
-            memory_len: integer, a lenght of the memory units,
-            n_turns: integer, a number of turns in helix memory,
-            preprocessing_layers: (Optional.) A nest of `tf.keras.layers.Layer`
-                representing preprocessing for the different observations.
-                All of these layers must not be already built. For more details see
-                the documentation of `networks.EncodingNetwork`.
-            preprocessing_combiner: (Optional.) A keras layer that takes a flat list
-                of tensors and combines them.  Good options include
-                `tf.keras.layers.Add` and `tf.keras.layers.Concatenate(axis=-1)`.
-                This layer must not be already built. For more details see
-                the documentation of `networks.EncodingNetwork`.
-            conv_layer_params: Optional list of convolution layers parameters, where
-                each item is a length-three tuple indicating (filters, kernel_size,
-                stride).
-            fc_layer_params: Optional list of fully_connected parameters, where
-                each item is the number of units in the layer. This is applied before
-                the OSAR layers.
-            input_dropout_layer_params: Optional list of dropout layer parameters,
-                where each item is the fraction of input units to drop. The dropout
-                layers are interleaved with the fully connected layers; there is a
-                dropout layer after each fully connected layer, except if the entry in
-                the list is None. This list must have the same length of
-                input_fc_layer_params, or be None.
-            output_fc_layer_params: Optional list of fully_connected parameters, where
-                each item is the number of units in the layer. This is applied after the
-                OSAR layers.
-            activation_fn: Activation function, e.g. tf.keras.activations.relu,.
-            conv_type: string, '1d' or '2d'. Convolution layers will be 1d or 2D respectively.
-            dtype: The dtype to use by the convolution, OSAR layers, and fully connected
-                layers.
-            name: A string representing name of the network.
+        input_tensor_spec: A `tensor_spec.TensorSpec` specifying the observation
+            spec.
+        action_spec: A `tensor_spec.BoundedTensorSpec` representing the actions.
+        num_atoms: The number of atoms to use in our approximate probability
+            distributions. Defaults to 51 to produce C51.
+        preprocessing_layers: (Optional.) A nest of `tf.keras.layers.Layer`
+            representing preprocessing for the different observations.
+            All of these layers must not be already built. For more details see
+            the documentation of `networks.EncodingNetwork`.
+        preprocessing_combiner: (Optional.) A keras layer that takes a flat list
+            of tensors and combines them. Good options include
+            `tf.keras.layers.Add` and `tf.keras.layers.Concatenate(axis=-1)`.
+            This layer must not be already built. For more details see
+            the documentation of `networks.EncodingNetwork`.
+        conv_layer_params: Optional list of convolution layer parameters for
+            observations, where each item is a length-three tuple indicating
+            (num_units, kernel_size, stride).
+        fc_layer_params: Optional list of fully connected parameters for
+            observations, where each item is the number of units in the layer.
+        activation_fn: Activation function, e.g. tf.nn.relu or tf.nn.leaky_relu.
+        name: A string representing the name of the network.
+        Raises:
+        TypeError: `action_spec` is not a `BoundedTensorSpec`.
         """
         del input_dropout_layer_params
 
@@ -187,25 +182,28 @@ class OSARNetwork(network.Network):#tf.keras.models.Model):
             bias_regularizer='l2',
         )
 
-        postprocessing_layers = tf.keras.layers.Dense(
-            num_actions,
-            # activation='softmax',
+        q_value_layer = tf.keras.layers.Dense(
+            num_actions*num_atoms,
+            activation=None,
             kernel_initializer=tf.random_uniform_initializer(
-                minval=-0.03, maxval=0.03))
+                minval=-0.03, maxval=0.03),
+            bias_initializer=tf.constant_initializer(-0.2),
+            dtype=dtype)
 
         super(OSARNetwork, self).__init__(
             input_tensor_spec=input_tensor_spec,
-            state_spec=(),
+            num_atoms=num_atoms,
+            action_spec=action_spec,
             name=name)
-
+        
         self._encoder = input_encoder
         self._context_generator = generator
         self._circuit = circuit
         self._repeater = gru
-        self._postprocessing_layers = postprocessing_layers
+        self._q_value_layer = q_value_layer
         # self._critic_layers = critic_layers
         self._action_memory = self.add_weight(
-            shape=(batch_size, 1, num_actions),
+            shape=(batch_size, 1, num_actions*self._num_atoms),
             initializer=tf.keras.initializers.get('glorot_uniform'),
             trainable=False,
             name='action-memory'
@@ -230,16 +228,18 @@ class OSARNetwork(network.Network):#tf.keras.models.Model):
             [state,
              self._action_memory,
              reward], axis=-1)
-        context = tf.math.l2_normalize(context, axis=1)
-        context = self._context_generator(context)
-        context = tf.math.l2_normalize(context, axis=1)
-        distance, importance, context_updated = self._circuit(context)
+        # context = tf.math.l2_normalize(context, axis=1)
+        context = self._context_generator(context, training=training)
+        # context = tf.math.l2_normalize(context, axis=1)
+        distance, importance, context_updated = self._circuit(context, training=training)
         context_updated = K.concatenate([distance, importance, context_updated], axis=-1)
         
-        context_updated = tf.math.l2_normalize(context_updated, axis=1)
+        # context_updated = tf.math.l2_normalize(context_updated, axis=1)
         action = self._repeater(context_updated)
 
-        value = self._postprocessing_layers(action, training=training)
-        self.add_update(K.update(self._action_memory, K.expand_dims(value, axis=1)))        
+        q_value = self._q_value_layer(action, training=training)
+        self.add_update(K.update(self._action_memory,
+                                 K.expand_dims(q_value, axis=1)))
+        logits = tf.reshape(q_value, [-1, self._num_actions, self._num_atoms])
 
-        return value, network_state
+        return logits, network_state
