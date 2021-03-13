@@ -111,10 +111,9 @@ class Experiment:
             data_spec=self._agent.collect_data_spec,
             batch_size=self._train_env.batch_size,
             max_length=self._replay_buffer_max_length)
-        self._dataset = self._replay_buffer.as_dataset(
-            num_parallel_calls=self._num_parallel_dataset_calls, sample_batch_size=agent_specs.get('batch_size', 1),
-            num_steps=self._n_step_update + 1).prefetch(self._n_prefetch)
-        self._iterator = iter(self._dataset)
+        # self._dataset = self._replay_buffer.as_dataset(
+        #     num_parallel_calls=self._num_parallel_dataset_calls, sample_batch_size=agent_specs.get('batch_size', 1),
+        #     num_steps=self._n_step_update + 1).prefetch(self._n_prefetch)
 
     def _compute_avg_return(self,
                             environment: tf_py_environment.TFPyEnvironment,
@@ -171,7 +170,9 @@ class Experiment:
             with tqdm.trange(self._num_iterations) as t:
                 for i in t:
                     self._collect_data(self._initial_collect_steps)
-                    experience, unused_info = next(self._iterator)
+                    experience, _ = next(iter(self._replay_buffer.as_dataset(
+                        num_parallel_calls=self._num_parallel_dataset_calls, sample_batch_size=1,
+                        num_steps=self._n_step_update + 1).prefetch(self._n_prefetch)))
                     train_loss = self._train(experience).loss
                     
                     step = self._agent.train_step_counter.numpy()
@@ -187,8 +188,10 @@ class Experiment:
                         returns.append(avg_return.numpy())
         else:
             for i in range(self._num_iterations):
-                self._collect_data(self._collect_steps_per_iteration)
-                experience, unused_info = next(self._iterator)
+                self._collect_data(self._initial_collect_steps)
+                experience, _ = next(iter(self._replay_buffer.as_dataset(
+                    num_parallel_calls=self._num_parallel_dataset_calls, sample_batch_size=1,
+                    num_steps=self._n_step_update + 1).prefetch(self._n_prefetch)))
                 train_loss = self._train(experience).loss
                    
                 step = self._agent.train_step_counter.numpy()
