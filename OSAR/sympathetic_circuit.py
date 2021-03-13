@@ -149,12 +149,12 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         target = tf.expand_dims(space[:, -1, :], axis=1)
 
         distance = tf.norm(
-            inputs - tf.tile(target, (1, timesteps_dim, 1)),
+            inputs - tf.tile(target, (batch_dim, timesteps_dim, 1)),
             axis=-1,
             ord='euclidean',
             keepdims=True)
         importance = tf.tile(tf.expand_dims(
-            importance, axis=1), (1, timesteps_dim, 1))
+            importance, axis=1), (batch_dim, timesteps_dim, 1))
         
         return distance, importance, output
 

@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 Konstantin Ustyuzhanin.
+# Copyright 2021 Konstantin Ustyuzhanin.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -217,29 +217,30 @@ class OSARNetwork(categorical_q_network.CategoricalQNetwork):# network.Network):
              network_state=(),
              training=False):
         
+        batch_dim = tf.shape(observation)[0]
+
         state, network_state = self._encoder(
             observation, step_type=step_type, network_state=network_state,
             training=training)
         
         state = tf.expand_dims(state, axis=0)
         reward = tf.expand_dims(tf.expand_dims(reward, axis=-1), axis=-1)
-        
         context = K.concatenate(
             [state,
              self._action_memory,
              reward], axis=-1)
-        # context = tf.math.l2_normalize(context, axis=1)
+        context = tf.math.l2_normalize(context, axis=1)
         context = self._context_generator(context, training=training)
-        # context = tf.math.l2_normalize(context, axis=1)
+        context = tf.math.l2_normalize(context, axis=1)
         distance, importance, context_updated = self._circuit(context, training=training)
         context_updated = K.concatenate([distance, importance, context_updated], axis=-1)
         
-        # context_updated = tf.math.l2_normalize(context_updated, axis=1)
+        context_updated = tf.math.l2_normalize(context_updated, axis=1)
         action = self._repeater(context_updated)
 
         q_value = self._q_value_layer(action, training=training)
         self.add_update(K.update(self._action_memory,
                                  K.expand_dims(q_value, axis=1)))
-        logits = tf.reshape(q_value, [-1, self._num_actions, self._num_atoms])
+        logits = tf.reshape(q_value, [batch_dim, self._num_actions, self._num_atoms])
 
         return logits, network_state
