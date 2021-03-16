@@ -36,7 +36,7 @@ import gin
 
 from tf_agents.keras_layers import dynamic_unroll_layer
 from tf_agents.networks import encoding_network, lstm_encoding_network
-from tf_agents.networks import network
+from tf_agents.networks import q_network
 from tf_agents.specs import tensor_spec
 from tf_agents.trajectories import time_step
 from tf_agents.utils import nest_utils
@@ -74,7 +74,7 @@ def validate_specs(action_spec, observation_spec):
         'Network only supports action_specs with shape in [(), (1,)])')
 
 @gin.configurable
-class OSARNetwork(categorical_q_network.CategoricalQNetwork):# network.Network):#tf.keras.models.Model):
+class OSARNetwork(q_network.QNetwork):  # categorical_q_network.CategoricalQNetwork)
     """OSAR network."""
 
     """Recurrent value network. Reduces to 1 value output per batch item."""
@@ -84,6 +84,7 @@ class OSARNetwork(categorical_q_network.CategoricalQNetwork):# network.Network):
                 action_spec,
                 batch_size,
                 memory_len=10,
+                categorical=False,
                 num_atoms=51,
                 n_turns=3,
                 preprocessing_layers=None,
@@ -109,8 +110,9 @@ class OSARNetwork(categorical_q_network.CategoricalQNetwork):# network.Network):
         input_tensor_spec: A `tensor_spec.TensorSpec` specifying the observation
             spec.
         action_spec: A `tensor_spec.BoundedTensorSpec` representing the actions.
+        categorical: Whether the network is categorical.
         num_atoms: The number of atoms to use in our approximate probability
-            distributions. Defaults to 51 to produce C51.
+            distributions. Defaults to 51 to produce C51 (required only if `categorical` == True).
         preprocessing_layers: (Optional.) A nest of `tf.keras.layers.Layer`
             representing preprocessing for the different observations.
             All of these layers must not be already built. For more details see
@@ -136,6 +138,8 @@ class OSARNetwork(categorical_q_network.CategoricalQNetwork):# network.Network):
         action_spec = tf.nest.flatten(action_spec)[0]
         num_actions = action_spec.maximum - action_spec.minimum + 1
         encoder_input_tensor_spec = input_tensor_spec
+
+        self._categorical = categorical
 
         kernel_initializer = tf.compat.v1.variance_scaling_initializer(
           scale=2.0, mode='fan_in', distribution='truncated_normal')
@@ -182,8 +186,9 @@ class OSARNetwork(categorical_q_network.CategoricalQNetwork):# network.Network):
             bias_regularizer='l2',
         )
 
+        units = num_actions  # num_actions*num_atoms if self._categorical else num_actions
         q_value_layer = tf.keras.layers.Dense(
-            num_actions*num_atoms,
+            units,
             activation=None,
             kernel_initializer=tf.random_uniform_initializer(
                 minval=-0.03, maxval=0.03),
@@ -192,7 +197,7 @@ class OSARNetwork(categorical_q_network.CategoricalQNetwork):# network.Network):
 
         super(OSARNetwork, self).__init__(
             input_tensor_spec=input_tensor_spec,
-            num_atoms=num_atoms,
+            # num_atoms=num_atoms,
             action_spec=action_spec,
             name=name)
         
@@ -203,7 +208,7 @@ class OSARNetwork(categorical_q_network.CategoricalQNetwork):# network.Network):
         self._q_value_layer = q_value_layer
         # self._critic_layers = critic_layers
         self._action_memory = self.add_weight(
-            shape=(batch_size, 1, num_actions*self._num_atoms),
+            shape=(batch_size, 1, num_actions),#*self._num_atoms),
             initializer=tf.keras.initializers.get('glorot_uniform'),
             trainable=False,
             name='action-memory'
@@ -216,7 +221,6 @@ class OSARNetwork(categorical_q_network.CategoricalQNetwork):# network.Network):
              step_type=None,
              network_state=(),
              training=False):
-        
         batch_dim = tf.shape(observation)[0]
 
         state, network_state = self._encoder(
@@ -241,6 +245,10 @@ class OSARNetwork(categorical_q_network.CategoricalQNetwork):# network.Network):
         q_value = self._q_value_layer(action, training=training)
         self.add_update(K.update(self._action_memory,
                                  K.expand_dims(q_value, axis=1)))
-        logits = tf.reshape(q_value, [batch_dim, self._num_actions, self._num_atoms])
+        
+        # Reshape to (num_actions, num_atoms) if network is C51-like
+        # if self._categorical:
+        #     logits = tf.reshape(q_value, [batch_dim, self._num_actions, self._num_atoms])
+        logits = q_value
 
         return logits, network_state
