@@ -373,6 +373,7 @@ class TrialAgent(tf_agent.TFAgent):
             return common.Periodically(update, period, 'periodic_update_targets')
 
     # Use @common.function in graph mode or for speeding up.
+    @common.function
     def _train(self, experience, weights):
         with tf.GradientTape() as tape:
             loss_info = self._loss(

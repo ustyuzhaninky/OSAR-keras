@@ -40,7 +40,6 @@ from tf_agents.networks import network
 from tf_agents.networks import utils as network_utils
 from tf_agents.trajectories import policy_step
 from tf_agents.trajectories import time_step as ts
-from OSAR import TemperatureStorage
 
 @gin.configurable
 class TrialPolicy(q_policy.QPolicy):

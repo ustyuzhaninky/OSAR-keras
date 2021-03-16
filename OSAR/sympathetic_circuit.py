@@ -146,7 +146,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         space = K.max(K.max(space, axis=1), axis=2)
         flat_space = tf.keras.layers.Flatten()(space)
         target, importance = self.queue([last_step, flat_space])
-        target = tf.expand_dims(space[:, -1, :], axis=1)
+        target = tf.expand_dims(space[:, -1, :], axis=1) / 2 + target / 2
 
         distance = tf.norm(
             inputs - tf.tile(target, (batch_dim, timesteps_dim, 1)),
