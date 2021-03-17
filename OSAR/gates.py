@@ -438,7 +438,7 @@ class AttentionGate(tf.keras.layers.Layer):
 
         super(AttentionGate, self).build(input_shape)
     
-    @tf.function
+    #@tf.function
     def call(self, inputs, **kwargs):
         
         batch_size = inputs.shape[0]

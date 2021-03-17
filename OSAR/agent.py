@@ -17,7 +17,7 @@
 #
 
 """DISCLAIMER
-    Some parts of the code are used from td3_agent.py from:
+    Some parts of the code are taken from td3_agent.py from:
         https://github.com/tensorflow/agents/blob/v0.7.1/tf_agents/agents/td3/td3_agent.py
     and dqn_agent.py from:
         https://github.com/tensorflow/agents/blob/v0.7.1/tf_agents/agents/dqn/dqn_agent.py

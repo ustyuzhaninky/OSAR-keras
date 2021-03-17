@@ -149,7 +149,7 @@ class ContextGenerator(tf.keras.layers.Layer):
 
         self.built = True
     
-    @tf.function
+    #@tf.function
     def call(self, inputs, **kwargs):
         batch_dim = tf.shape(inputs)[0]
         timesteps_dim = tf.shape(inputs)[1]

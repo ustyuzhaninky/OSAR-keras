@@ -57,7 +57,7 @@ class QueueMemory(tf.keras.layers.Layer):
         self,
         memory_len: int,
         kernel_initializer='glorot_uniform',
-        kernel_regularizer='l2',
+        kernel_regularizer=None,
         kernel_constraint=None,
         **kwargs):
         super(QueueMemory, self).__init__(**kwargs)

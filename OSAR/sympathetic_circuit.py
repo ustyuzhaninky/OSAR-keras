@@ -79,8 +79,8 @@ class SympatheticCircuit(tf.keras.layers.Layer):
                  kernel_regularizer=None,
                  kernel_constraint=None,
                  bias_initializer='truncated_normal',
-                 bias_regularizer='l2',
-                 bias_constraint='l2',
+                 bias_regularizer=None,
+                 bias_constraint=None,
                  return_probabilities=False,
                  **kwargs):
         super(SympatheticCircuit, self).__init__(**kwargs)
@@ -133,7 +133,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         feature_dim = tf.cast(input_shape[-1], tf.int32)
         return (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, feature_dim)
 
-    @tf.function
+    #@tf.function
     def call(self, inputs):
         batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
         timesteps_dim = tf.cast(tf.shape(inputs)[1], tf.int32)

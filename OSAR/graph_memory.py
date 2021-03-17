@@ -79,10 +79,10 @@ class EventSpace(tf.keras.layers.Layer):
         attention_dropout=0.0,
         use_bias:bool=True,
         kernel_initializer='glorot_uniform',
-        kernel_regularizer='l2',
+        kernel_regularizer=None,
         kernel_constraint=None,
         bias_initializer='zeros',
-        bias_regularizer='l2',
+        bias_regularizer=None,
         bias_constraint=None,
         return_space:bool=False,
         **kwargs,):
@@ -138,7 +138,7 @@ class EventSpace(tf.keras.layers.Layer):
                                   
         self.built = True
     
-    @tf.function
+    #@tf.function
     def call(self, inputs, training=False, **kwargs):
         batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
         seq_dim = tf.cast(tf.shape(inputs)[1], tf.int32)

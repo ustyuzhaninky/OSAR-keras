@@ -163,15 +163,15 @@ class OSARNetwork(q_network.QNetwork):  # categorical_q_network.CategoricalQNetw
             n_states=fc_layer_params[0],
             dropout=0.2,
             attention_dropout=0.2,
-            kernel_regularizer='l2',
-            bias_regularizer='l2',
+            kernel_regularizer=None,
+            bias_regularizer=None,
             )
 
         gru = tf.keras.layers.GRU(fc_layer_params[0],
-                                   kernel_regularizer='l2',
+                                   kernel_regularizer=None,
                                    dropout=0.2,
                                    recurrent_dropout=0,
-                                   bias_regularizer='l2',
+                                   bias_regularizer=None,
                                    reset_after=True,
                                    unroll=False,
                                    name='gru'
@@ -181,9 +181,9 @@ class OSARNetwork(q_network.QNetwork):  # categorical_q_network.CategoricalQNetw
             fc_layer_params[0],
             (input_fc_layer_params[-1], 1, num_actions),
             memory_len,
-            kernel_regularizer='l2',
+            kernel_regularizer=None,
             dropout=0.2,
-            bias_regularizer='l2',
+            bias_regularizer=None,
         )
 
         units = num_actions  # num_actions*num_atoms if self._categorical else num_actions
