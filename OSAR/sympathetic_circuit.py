@@ -139,13 +139,17 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         timesteps_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
         feature_dim = tf.cast(tf.shape(inputs)[-1], tf.int32)
 
-        last_step = inputs[:, -1, :]
+        # last_step = inputs[:, -1, :]
         output, space = self.event_space(inputs)
         space = K.reshape(space, (batch_dim, timesteps_dim,
                                   timesteps_dim, feature_dim, feature_dim))
         space = K.max(K.max(space, axis=1), axis=2)
-        flat_space = tf.keras.layers.Flatten()(space)
-        target, importance = self.queue([last_step, flat_space])
+        target, importance = self.queue([output, space])
+        importance = tf.tile(
+            importance, (batch_dim, timesteps_dim, 1))
+
+        # flat_space = tf.keras.layers.Flatten()(space)
+        # target, importance = self.queue([last_step, flat_space])
         target = tf.expand_dims(space[:, -1, :], axis=1) / 2 + target / 2
 
         distance = tf.norm(
@@ -153,8 +157,8 @@ class SympatheticCircuit(tf.keras.layers.Layer):
             axis=-1,
             ord='euclidean',
             keepdims=True)
-        importance = tf.tile(tf.expand_dims(
-            importance, axis=1), (batch_dim, timesteps_dim, 1))
+        # importance = tf.tile(tf.expand_dims(
+        #     importance, axis=1), (batch_dim, timesteps_dim, 1))
         
         return distance, importance, output
 

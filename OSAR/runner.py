@@ -126,6 +126,7 @@ class Experiment:
             episode_return = 0.0
 
             while not time_step.is_last():
+                # environment.render()
                 action_step = policy(time_step)
                 time_step = environment.step(action_step.action)
                 episode_return += time_step.reward
@@ -149,6 +150,7 @@ class Experiment:
     
     def _collect_data(self, collect_steps):
         for _ in range(collect_steps):
+            # self._train_env.render()
             time_step = self._train_env.current_time_step()
             action_step = self._collect_policy(time_step)
             next_time_step = self._train_env.step(action_step.action)
@@ -286,30 +288,34 @@ class Runner:
                         losses = losses.reshape(
                             (1, np.array(losses).shape[0]))
 
-                        # Saving results of the game
-                        if len(returns) > 0:
-                            self._ds_returns.append(pd.DataFrame(
-                                np.array(returns).T, columns=['average_return']))
-                            self._ds_games = pd.concat([self._ds_games,
-                                                        pd.DataFrame(np.array([np.max(returns, axis=-1),
-                                                                               np.mean(returns, axis=-1)]).T,
-                                                                     columns=[
-                                                                         'Max. Return', 'Mean Return'],
-                                                                     index=self._env_names)
-                                                        ],
-                                                       axis=0,
-                                                       sort=False
-                                                       )
-                        self._ds_trajectories.append(pd.DataFrame(
-                            np.concatenate([trajectory, losses], axis=0).T, columns=['reward', 'loss']))
-
                         # Creating a gif for a game
                         
                         filename = os.path.join(
                             self._logpath, 'logs', self._model_name, 'videos', f"{item.get('env_name')}-trained.gif")
                         experiment.evaluate(filename)
+
                         experiment.save(os.path.join(self._logpath, 'logs',
                                                     self._model_name, 'cache'))
+                                                    
+                        # Saving results of the game
+                        if len(returns) > 0:
+                            self._ds_returns.append(pd.DataFrame(
+                                np.array(returns).T, columns=['average_return']))
+                            add_df = pd.DataFrame(np.array([np.max(returns, axis=-1),
+                                                            np.mean(returns, axis=-1)]).T,
+                                                  columns=[
+                                'Max. Return', 'Mean Return'],
+                                index=[self._env_names[i]])
+                            self._ds_games = pd.concat([self._ds_games,
+                                                        add_df,
+                                                        ],
+                                                    axis=0,
+                                                    sort=False
+                                                    )
+                        self._ds_trajectories.append(pd.DataFrame(
+                            np.concatenate([trajectory, losses], axis=0).T, columns=['reward', 'loss']))
+
+                        
         else:
             for i in range(n_games):
                 item = self._list_configs[i]
@@ -326,30 +332,34 @@ class Runner:
                 losses = losses.reshape(
                     (1, np.array(losses).shape[0]))
 
-                # Saving results of the game
-                if (len(trajectory) != 0) & (len(losses) != 0):
-                    if len(returns) > 0:
-                        self._ds_returns.append(pd.DataFrame(
-                            np.array(returns).T, columns=['average_return']))
-                        self._ds_games = pd.concat([self._ds_games,
-                                                    pd.DataFrame(np.array([np.max(returns, axis=-1),
-                                                    np.mean(returns, axis=-1)]).T,
-                                                    columns=['Max. Return', 'Mean Return'],
-                                                                 index=self._env_names)
-                                                                 ],
-                                                                 axis=0,
-                                                                 sort=False
-                                                                 )
-                    self._ds_trajectories.append(pd.DataFrame(
-                        np.concatenate([trajectory, losses], axis=0).T, columns=['reward', 'loss']))
-                
                 # Creating a gif for a game
                 filename = os.path.join(
                     self._logpath, 'logs', self._model_name, 'videos', f"{item.get('env_name')}-trained.gif")
                 experiment.evaluate(filename)
-                
+
                 experiment.save(os.path.join(self._logpath, 'logs',
                                              self._model_name, 'cache'))
+
+                # Saving results of the game
+                if (len(trajectory) != 0) & (len(losses) != 0):
+                    if len(returns) > 0:
+                        self._ds_returns.append(pd.DataFrame(
+                                np.array(returns).T, columns=['average_return']))
+                        add_df = pd.DataFrame(np.array([np.max(returns, axis=-1),
+                                                        np.mean(returns, axis=-1)]).T,
+                                              columns=[
+                            'Max. Return', 'Mean Return'],
+                            index=[self._env_names[i]])
+                        self._ds_games = pd.concat([self._ds_games,
+                                                    add_df,
+                                                    ],
+                                                axis=0,
+                                                sort=False
+                                                )
+                    self._ds_trajectories.append(pd.DataFrame(
+                        np.concatenate([trajectory, losses], axis=0).T, columns=['reward', 'loss']))
+                
+                
 
         # Saving results
         open(os.path.join(

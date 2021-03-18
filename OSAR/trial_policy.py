@@ -74,12 +74,11 @@ class TrialPolicy(q_policy.QPolicy):
             network_observation, mask = observation_and_action_constraint_splitter(
                 network_observation)
 
-        q_values, policy_state = self._q_network(
+        logits, policy_state = self._q_network(
             network_observation,
             reward=network_reward,
             network_state=policy_state,
             step_type=time_step.step_type)
-        logits = q_values
 
         if observation_and_action_constraint_splitter is not None:
             # Overwrite the logits for invalid actions to logits.dtype.min.

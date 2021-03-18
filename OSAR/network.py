@@ -47,6 +47,8 @@ from . import ContextGenerator
 from . import Memory
 from . import SympatheticCircuit
 
+__all__ = ['OSARNetwork']
+
 """Sample Keras Network with OSAR, based on Q-network:
     https://github.com/tensorflow/agents/blob/v0.7.1/tf_agents/networks/q_network.py#L43-L149 
 Implements a network that will generate the following layers:
@@ -74,7 +76,7 @@ def validate_specs(action_spec, observation_spec):
         'Network only supports action_specs with shape in [(), (1,)])')
 
 @gin.configurable
-class OSARNetwork(q_network.QNetwork):  # categorical_q_network.CategoricalQNetwork)
+class OSARNetwork(q_network.QNetwork):
     """OSAR network."""
 
     """Recurrent value network. Reduces to 1 value output per batch item."""
@@ -163,15 +165,15 @@ class OSARNetwork(q_network.QNetwork):  # categorical_q_network.CategoricalQNetw
             n_states=fc_layer_params[0],
             dropout=0.2,
             attention_dropout=0.2,
-            kernel_regularizer=None,
-            bias_regularizer=None,
+            kernel_regularizer='l2',
+            bias_regularizer='l2',
             )
 
         gru = tf.keras.layers.GRU(fc_layer_params[0],
-                                   kernel_regularizer=None,
+                                   kernel_regularizer='l2',
                                    dropout=0.2,
                                    recurrent_dropout=0,
-                                   bias_regularizer=None,
+                                   bias_regularizer='l2',
                                    reset_after=True,
                                    unroll=False,
                                    name='gru'
@@ -181,9 +183,9 @@ class OSARNetwork(q_network.QNetwork):  # categorical_q_network.CategoricalQNetw
             fc_layer_params[0],
             (input_fc_layer_params[-1], 1, num_actions),
             memory_len,
-            kernel_regularizer=None,
+            kernel_regularizer='l2',
             dropout=0.2,
-            bias_regularizer=None,
+            bias_regularizer='l2',
         )
 
         units = num_actions  # num_actions*num_atoms if self._categorical else num_actions
@@ -233,14 +235,14 @@ class OSARNetwork(q_network.QNetwork):  # categorical_q_network.CategoricalQNetw
             [state,
              self._action_memory,
              reward], axis=-1)
-        context = tf.math.l2_normalize(context, axis=1)
+        # context = tf.math.l2_normalize(context, axis=1)
         context = self._context_generator(context, training=training)
-        context = tf.math.l2_normalize(context, axis=1)
+        # context = tf.math.l2_normalize(context, axis=1)
         distance, importance, context_updated = self._circuit(context, training=training)
-        context_updated = K.concatenate([distance, importance, context_updated], axis=-1)
+        context = K.concatenate([distance, importance, context_updated], axis=-1)
         
-        context_updated = tf.math.l2_normalize(context_updated, axis=1)
-        action = self._repeater(context_updated)
+        # context = tf.math.l2_normalize(context, axis=1)
+        action = self._repeater(context)
 
         q_value = self._q_value_layer(action, training=training)
         self.add_update(K.update(self._action_memory,

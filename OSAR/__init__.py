@@ -24,8 +24,7 @@ from OSAR.cap_layers import *
 from OSAR.queue_memory import *
 from OSAR.graph_memory import *
 from OSAR.sympathetic_circuit import *
-from OSAR.network import OSARNetwork
-# from OSAR.temperature_storage import TemperatureStorage
+from OSAR.network import *
 from OSAR.trial_policy import TrialPolicy
 from OSAR.agent import TrialAgent
 from OSAR.runner import *

@@ -84,7 +84,6 @@ class TrialAgent(tf_agent.TFAgent):
             epsilon_greedy: types.FloatOrReturningFloat = 0.1,
             n_step_update: int = 2,
             boltzmann_temperature: Optional[types.Int] = None,
-            temperature_storage_size: types.Int = 100,
             emit_log_probability: bool = False,
             reward_scale_factor: types.Float = 1.0,
             gradient_clipping: Optional[types.Float] = None,
@@ -136,7 +135,6 @@ class TrialAgent(tf_agent.TFAgent):
             boltzmann_temperature: Temperature value to use for Boltzmann sampling of
                 the actions during data collection. The closer to 0.0, the higher the
                 probability of choosing the best action.
-            temperature_storage_size: Number of q_value samples to store for computing
             emit_log_probability: Whether policies emit log probabilities or not.
             reward_scale_factor: Multiplicative scale for the reward.
             gradient_clipping: Norm length to clip gradients.
@@ -297,7 +295,7 @@ class TrialAgent(tf_agent.TFAgent):
         del info
 
         network_observation = next_time_steps.observation
-        network_reward = tf.expand_dims(next_time_steps.reward, axis=-1)
+        network_reward = next_time_steps.reward
 
         if self._observation_and_action_constraint_splitter is not None:
             network_observation, _ = self._observation_and_action_constraint_splitter(
@@ -307,7 +305,7 @@ class TrialAgent(tf_agent.TFAgent):
         multi_dim_actions = action_spec.shape.rank > 0
 
         next_target_q_values, _ = self._target_network(
-            network_observation, step_type=next_time_steps.step_type)
+            network_observation, reward=network_reward, step_type=next_time_steps.step_type)
         batch_size = (
             next_target_q_values.shape[0] or tf.shape(next_target_q_values)[0])
         dummy_state = self._policy.get_initial_state(batch_size)
