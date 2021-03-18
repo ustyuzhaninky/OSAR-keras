@@ -175,6 +175,9 @@ class Experiment:
         avg_return = self._compute_avg_return(
             self._eval_env, self._eval_policy, self._num_eval_episodes)
         returns, trajectory, losses = [], [], []
+
+        iterator = iter(self._dataset)
+
         if progress:
             with tqdm.trange(self._num_iterations) as t:
                 for i in t:
@@ -182,7 +185,7 @@ class Experiment:
                     # experience, _ = next(iter(self._replay_buffer.as_dataset(
                     #     num_parallel_calls=self._num_parallel_dataset_calls, sample_batch_size=1,
                     #     num_steps=self._n_step_update + 1).prefetch(self._n_prefetch)))
-                    experience, _ = next(iter(self._dataset))
+                    experience, _ = next(iterator)
                     train_loss = self._train(experience).loss
                     
                     step = self._agent.train_step_counter.numpy()
