@@ -218,6 +218,8 @@ class TrialAgent(tf_agent.TFAgent):
             validate_args=False
         )
 
+        self.episode_step_counter = tf.Variable(0, dtype=tf.int64)
+
         if network.state_spec:
             # AsNStepTransition does not support emitting [B, T, ...] tensors,
             # which we need for DQN-RNN.
@@ -339,6 +341,10 @@ class TrialAgent(tf_agent.TFAgent):
         action_spec = cast(tensor_spec.BoundedTensorSpec, self._action_spec)
         multi_dim_actions = action_spec.shape.rank > 0
         
+        if self._debug_summaries:
+            tf.summary.scalar('network_reward', network_reward[0],
+                              self.episode_step_counter)
+
         return common.index_with_actions(
             q_values,
             tf.cast(actions, tf.int32),
@@ -403,6 +409,8 @@ class TrialAgent(tf_agent.TFAgent):
             self._optimizer.apply_gradients(grads_and_vars)
             self.train_step_counter.assign_add(1)
 
+        self.episode_step_counter.assign_add(1)
+        
         return loss_info
 
     def _loss(self,

@@ -111,9 +111,9 @@ class Experiment:
             data_spec=self._agent.collect_data_spec,
             batch_size=self._train_env.batch_size,
             max_length=self._replay_buffer_max_length)
-        # self._dataset = self._replay_buffer.as_dataset(
-        #     num_parallel_calls=self._num_parallel_dataset_calls, sample_batch_size=agent_specs.get('batch_size', 1),
-        #     num_steps=self._n_step_update + 1).prefetch(self._n_prefetch)
+        self._dataset = self._replay_buffer.as_dataset(
+            num_parallel_calls=self._num_parallel_dataset_calls, sample_batch_size=agent_specs.get('batch_size', 1),
+            num_steps=self._n_step_update + 1).prefetch(self._n_prefetch)
 
     def _compute_avg_return(self,
                             environment: tf_py_environment.TFPyEnvironment,
@@ -160,7 +160,14 @@ class Experiment:
             # Add trajectory to the replay buffer
             self._replay_buffer.add_batch(traj)
 
-    def __call__(self, progress: bool=True):
+    def __call__(self, cache_dir, progress: bool = True):
+        writer = tf.summary.create_file_writer(cache_dir)    
+        with writer.as_default():
+            returns, trajectory, losses = self.call(progress)
+            writer.flush()
+        return returns, trajectory, losses
+
+    def call(self, progress: bool=True):
         # Reset the train step
         self._agent.train_step_counter.assign(0)
         
@@ -172,9 +179,10 @@ class Experiment:
             with tqdm.trange(self._num_iterations) as t:
                 for i in t:
                     self._collect_data(self._initial_collect_steps)
-                    experience, _ = next(iter(self._replay_buffer.as_dataset(
-                        num_parallel_calls=self._num_parallel_dataset_calls, sample_batch_size=1,
-                        num_steps=self._n_step_update + 1).prefetch(self._n_prefetch)))
+                    # experience, _ = next(iter(self._replay_buffer.as_dataset(
+                    #     num_parallel_calls=self._num_parallel_dataset_calls, sample_batch_size=1,
+                    #     num_steps=self._n_step_update + 1).prefetch(self._n_prefetch)))
+                    experience, _ = next(iter(self._dataset))
                     train_loss = self._train(experience).loss
                     
                     step = self._agent.train_step_counter.numpy()
@@ -274,7 +282,10 @@ class Runner:
                     experiment = Experiment(
                         **item
                     )
+                    cache_dir = os.path.join(
+                            self._logpath, 'logs', self._model_name)
                     returns, trajectory, losses = experiment(
+                        cache_dir,
                         progress=experiment_progress)
                     t.set_description(f'Game {i}/{n_games}')
                     if len(returns) > 0:
@@ -323,7 +334,10 @@ class Runner:
                 experiment = Experiment(
                     **item
                 )
+                cache_dir = os.path.join(
+                    self._logpath, 'logs', self._model_name)
                 returns, trajectory, losses = experiment(
+                    cache_dir,
                     progress=experiment_progress)
                 returns = returns.reshape(
                             (1, len(returns)))
