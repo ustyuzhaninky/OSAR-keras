@@ -86,8 +86,7 @@ class OSARNetwork(q_network.QNetwork):
                 action_spec,
                 batch_size,
                 memory_len=10,
-                categorical=False,
-                num_atoms=51,
+                frozen=False,
                 n_turns=3,
                 preprocessing_layers=None,
                 preprocessing_combiner=None,
@@ -102,19 +101,16 @@ class OSARNetwork(q_network.QNetwork):
                  name='OSARNetwork'):
         """Creates an instance of `OSARNetwork`.
         The logits output by __call__ will ultimately have a shape of
-        `[batch_size, num_actions, num_atoms]`, where `num_actions` is computed as
+        `[batch_size, num_actions]`, where `num_actions` is computed as
         `action_spec.maximum - action_spec.minimum + 1`. Each value is a logit for
         a particular action at a particular atom (see above).
         As an example, if
-        `action_spec = tensor_spec.BoundedTensorSpec([1], tf.int32, 0, 4)` and
-        `num_atoms = 51`, the logits will have a shape of `[batch_size, 5, 51]`.
+        `action_spec = tensor_spec.BoundedTensorSpec([1], tf.int32, 0, 4)`.
         Args:
         input_tensor_spec: A `tensor_spec.TensorSpec` specifying the observation
             spec.
         action_spec: A `tensor_spec.BoundedTensorSpec` representing the actions.
-        categorical: Whether the network is categorical.
-        num_atoms: The number of atoms to use in our approximate probability
-            distributions. Defaults to 51 to produce C51 (required only if `categorical` == True).
+        frozen: Whether the network auto-tuning should be disabled (for target network).
         preprocessing_layers: (Optional.) A nest of `tf.keras.layers.Layer`
             representing preprocessing for the different observations.
             All of these layers must not be already built. For more details see
@@ -140,8 +136,6 @@ class OSARNetwork(q_network.QNetwork):
         action_spec = tf.nest.flatten(action_spec)[0]
         num_actions = action_spec.maximum - action_spec.minimum + 1
         encoder_input_tensor_spec = input_tensor_spec
-
-        self._categorical = categorical
 
         kernel_initializer = tf.compat.v1.variance_scaling_initializer(
           scale=2.0, mode='fan_in', distribution='truncated_normal')
@@ -188,7 +182,7 @@ class OSARNetwork(q_network.QNetwork):
             bias_regularizer='l2',
         )
 
-        units = num_actions  # num_actions*num_atoms if self._categorical else num_actions
+        units = num_actions
         q_value_layer = tf.keras.layers.Dense(
             units,
             activation=None,
@@ -199,7 +193,6 @@ class OSARNetwork(q_network.QNetwork):
 
         super(OSARNetwork, self).__init__(
             input_tensor_spec=input_tensor_spec,
-            # num_atoms=num_atoms,
             action_spec=action_spec,
             name=name)
         
@@ -208,13 +201,13 @@ class OSARNetwork(q_network.QNetwork):
         self._circuit = circuit
         self._repeater = gru
         self._q_value_layer = q_value_layer
-        # self._critic_layers = critic_layers
         self._action_memory = self.add_weight(
-            shape=(batch_size, 1, num_actions),#*self._num_atoms),
+            shape=(batch_size, 1, num_actions),
             initializer=tf.keras.initializers.get('glorot_uniform'),
             trainable=False,
             name='action-memory'
         )
+        self.frozen = frozen
 
     # @tf.function
     def call(self,
@@ -235,22 +228,16 @@ class OSARNetwork(q_network.QNetwork):
             [state,
              self._action_memory,
              reward], axis=-1)
-        # context = tf.math.l2_normalize(context, axis=1)
         context = self._context_generator(context, training=training)
-        # context = tf.math.l2_normalize(context, axis=1)
-        distance, importance, context_updated = self._circuit(context, training=training)
+        distance, importance, context_updated = self._circuit(context, training=training, frozen=self.frozen)
         context = K.concatenate([distance, importance, context_updated], axis=-1)
         
-        # context = tf.math.l2_normalize(context, axis=1)
         action = self._repeater(context)
 
         q_value = self._q_value_layer(action, training=training)
         self.add_update(K.update(self._action_memory,
                                  K.expand_dims(q_value, axis=1)))
         
-        # Reshape to (num_actions, num_atoms) if network is C51-like
-        # if self._categorical:
-        #     logits = tf.reshape(q_value, [batch_dim, self._num_actions, self._num_atoms])
         logits = q_value
 
         return logits, network_state

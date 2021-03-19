@@ -124,7 +124,7 @@ class EventSpace(tf.keras.layers.Layer):
             initializer=self.kernel_initializer,
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
-            name='space',
+            name=f'{self.name}-space',
             trainable=False,
         )
 
@@ -135,11 +135,20 @@ class EventSpace(tf.keras.layers.Layer):
         self.encoder.build(
             (batch_dim, self.units, self.units))
         self.encoder.built = True
+
+        self.bias = self.add_weight(
+            name=f'{self.name}-bias',
+            initializer=self.bias_initializer,
+            regularizer=self.bias_regularizer,
+            shape=(batch_dim, 1,),
+            dtype=tf.float32,
+            trainable=True,
+        )
                                   
         self.built = True
     
     #@tf.function
-    def call(self, inputs, training=False, **kwargs):
+    def call(self, inputs, frozen=False, training=False, **kwargs):
         batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
         seq_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
         output_dim = tf.cast(tf.shape(inputs)[-1], tf.int32)
@@ -155,14 +164,14 @@ class EventSpace(tf.keras.layers.Layer):
         filters = self.caps(cross_levels)
         outputs = self.encoder(filters)
         
-        ideal_rewards = K.reshape(
-            self.space, (batch_dim, seq_dim, seq_dim, output_dim, output_dim))
-        ideal_rewards = ideal_rewards[..., -1, -1]
-        reward_diff = K.softmax(K.max(K.max(ideal_rewards[..., 0, 0] - rewards, axis=1), axis=1))
-        updated_space = KroneckerMixture()([outputs, inputs]) * reward_diff
-        updated_space = self.space * (1 - reward_diff) + updated_space
-
-        self.add_update(K.update(self.space, updated_space))
+        if not frozen:
+            ideal_rewards = K.reshape(
+                self.space, (batch_dim, seq_dim, seq_dim, output_dim, output_dim))
+            ideal_rewards = ideal_rewards[..., -1, -1]
+            reward_diff = K.tanh(K.max(K.max(K.abs(
+                ideal_rewards[..., 0, 0] - rewards), axis=1), axis=1) - self.bias)
+            updated_space = KroneckerMixture()([outputs, inputs]) 
+            updated_space = self.space + reward_diff * updated_space
         
         if self.return_space:
             return outputs, self.space

@@ -65,7 +65,7 @@ class HelixMemory(tf.keras.layers.Layer):
         compression_rate=2,
         mode='avg',
         initializer='glorot_uniform',
-        regularizer=None,
+        regularizer='l2',
         constraint=None,
         **kwargs):
 

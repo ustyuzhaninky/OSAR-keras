@@ -1,12 +1,13 @@
 tensorflow>=2.4.1
 atari_py>=0.2.6
-gym[atari] >= 0.10.5
+gym[atari]>=0.10.5
 imageio>=2.8.2
 PILLOW>=7.1.2
 pyglet>=1.5.0
 matplotlib>=3.1.3
 pydot>=1.4.1
 graphviz>=0.14
+pybullet>=3.1.0
 tf_agents>=0.6.0
 gin-config >= 0.1.1
 tensorflow_probability >= 0.12.1
