@@ -41,8 +41,10 @@ def get_version(rel_path):
 here = path.abspath(path.dirname(__file__))
 
 install_requires = [
-                    'importlib-metadata ~= 1.0 ; python_version >= "3.6"',
-                    'tensorflow >= 2.3.0', 'gin-config >= 0.1.1', 'tf_agents>=0.6.0'
+                    'importlib-metadata ~= 1.0 ; python_version == "3.8.1"',
+                    'tensorflow >= 2.4.1', 'gin-config >= 0.1.1', 'tf_agents[reverb]>=0.7.1',
+                    'dm-reverb >= 0.2.0', 'tqdm>=4.59.0', 'atari_py>=0.2.6', 'imageio>=2.8.2',
+                    'PILLOW>=7.1.2', 'pandas>=1.2.3', 'pybullet>=3.1.0'
                     ]
 tests_require = ['matplotlib>=3.1.3',
                  'gym >= 0.10.5', 'graphviz >= 0.14',

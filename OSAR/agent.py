@@ -82,7 +82,7 @@ class TrialAgent(tf_agent.TFAgent):
             gamma: types.Float = 1.0,
             batch_size: types.Int = 1.0,
             epsilon_greedy: types.FloatOrReturningFloat = 0.1,
-            n_step_update: int = 2,
+            n_step_update: int = 1,
             boltzmann_temperature: Optional[types.Int] = None,
             emit_log_probability: bool = False,
             reward_scale_factor: types.Float = 1.0,
@@ -168,6 +168,8 @@ class TrialAgent(tf_agent.TFAgent):
         self._target_network = common.maybe_copy_target_network_with_checks(
             self._network, None, input_spec=net_observation_spec,
             name='TargetNetwork')
+        
+        # self._target_network.frozen = True
 
         self._check_network_output(self._network, 'network')
         self._check_network_output(self._target_network, 'target_network')
@@ -197,15 +199,14 @@ class TrialAgent(tf_agent.TFAgent):
                                                     boltzmann_temperature,
                                                     emit_log_probability)
 
-        # if network.state_spec and n_step_update != 1:
-        #     raise NotImplementedError(
-        #         'DqnAgent does not currently support n-step updates with stateful '
-        #         'networks (i.e., RNNs), but n_step_update = {}'.format(n_step_update))
+        if network.state_spec and n_step_update != 1:
+            raise NotImplementedError(
+                'DqnAgent does not currently support n-step updates with stateful '
+                'networks (i.e., RNNs), but n_step_update = {}'.format(n_step_update))
         
-        # train_sequence_length = (
-        #     n_step_update if not network.state_spec else None)
-        train_sequence_length = 3
-
+        train_sequence_length = (
+            n_step_update+1 if not network.state_spec else None)
+        
         super(TrialAgent, self).__init__(
             time_step_spec,
             action_spec,
@@ -218,25 +219,26 @@ class TrialAgent(tf_agent.TFAgent):
             validate_args=False
         )
 
-        self.episode_step_counter = tf.Variable(0, dtype=tf.int64)
 
         if network.state_spec:
             # AsNStepTransition does not support emitting [B, T, ...] tensors,
             # which we need for DQN-RNN.
             self._as_transition = data_converter.AsTransition(
-                self.data_context, squeeze_time_dim=True)
+                self.data_context, squeeze_time_dim=False)
         else:
             # This reduces the n-step return and removes the extra time dimension,
             # allowing the rest of the computations to be independent of the
             # n-step parameter.
             self._as_transition = data_converter.AsNStepTransition(
-                self.data_context, gamma=gamma, n=n_step_update)
+                self.data_context, gamma=gamma, n=1)
+
+        self.episode_step_counter = tf.Variable(0, dtype=tf.int64)
 
     def _check_action_spec(self, action_spec):
         flat_action_spec = tf.nest.flatten(action_spec)
 
         # TODO(oars): Get DQN working with more than one dim in the actions.
-        if len(flat_action_spec) > 1 or flat_action_spec[0].shape.rank > 0:
+        if len(flat_action_spec) > 1 or len(flat_action_spec[0].shape) > 0:
             raise ValueError(
                 'Only scalar actions are supported now, but action spec is: {}'
                 .format(action_spec))
@@ -304,7 +306,7 @@ class TrialAgent(tf_agent.TFAgent):
                 network_observation)
 
         action_spec = cast(tensor_spec.BoundedTensorSpec, self._action_spec)
-        multi_dim_actions = action_spec.shape.rank > 0
+        multi_dim_actions = len(action_spec.shape) > 0
 
         next_target_q_values, _ = self._target_network(
             network_observation, reward=network_reward, step_type=next_time_steps.step_type)
@@ -318,7 +320,7 @@ class TrialAgent(tf_agent.TFAgent):
 
         # Handle action_spec.shape=(), and shape=(1,) by using the multi_dim_actions
         # param. Note: assumes len(tf.nest.flatten(action_spec)) == 1.
-        multi_dim_actions = tf.nest.flatten(self._action_spec)[0].shape.rank > 0
+        multi_dim_actions = len(tf.nest.flatten(self._action_spec)[0].shape) > 0
         return common.index_with_actions(
             next_target_q_values,
             greedy_actions,
@@ -339,7 +341,7 @@ class TrialAgent(tf_agent.TFAgent):
         # Handle action_spec.shape=(), and shape=(1,) by using the multi_dim_actions
         # param. Note: assumes len(tf.nest.flatten(action_spec)) == 1.
         action_spec = cast(tensor_spec.BoundedTensorSpec, self._action_spec)
-        multi_dim_actions = action_spec.shape.rank > 0
+        multi_dim_actions = len(action_spec.shape) > 0
         
         if self._debug_summaries:
             tf.summary.scalar('network_reward', network_reward[0],
@@ -420,7 +422,7 @@ class TrialAgent(tf_agent.TFAgent):
               reward_scale_factor=1.0,
               weights=None,
               training=False):
-
+        
         self._check_trajectory_dimensions(experience)
 
         squeeze_time_dim = not self._network.state_spec
@@ -432,8 +434,10 @@ class TrialAgent(tf_agent.TFAgent):
             # To compute n-step returns, we need the first time steps, the first
             # actions, and the last time steps. Therefore we extract the first and
             # last transitions from our Trajectory.
-            first_two_steps = tf.nest.map_structure(lambda x: x[:, :2], experience)
-            last_two_steps = tf.nest.map_structure(lambda x: x[:, -2:], experience)
+            first_two_steps = tf.nest.map_structure(
+                lambda x: x[:, :2], experience)
+            last_two_steps = tf.nest.map_structure(
+                lambda x: x[:, -2:], experience)
             time_steps, policy_steps, _ = (
                 trajectory.experience_to_transitions(
                     first_two_steps, squeeze_time_dim))
@@ -441,7 +445,7 @@ class TrialAgent(tf_agent.TFAgent):
             _, _, next_time_steps = (
                 trajectory.experience_to_transitions(
                     last_two_steps, squeeze_time_dim))
-
+        # print(time_steps, actions)
         with tf.name_scope('loss'):
             q_values = self._compute_q_values(
                 time_steps, actions, training=training)
