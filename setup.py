@@ -20,87 +20,190 @@ See: https://github.com/ustyuzhaninky/OSAR-keras
 
 """
 
+import argparse
+import codecs
+import datetime
+import fnmatch
+import os
+import sys
 from os import path
 from setuptools import find_packages
 from setuptools import setup
 import codecs
 
-def read(rel_path):
-    here = path.abspath(path.dirname(__file__))
-    with codecs.open(path.join(here, rel_path), 'r') as fp:
-        return fp.read()
+from setuptools import find_packages
+from setuptools import setup
+from setuptools.command.install import install as InstallCommandBase
+from setuptools.dist import Distribution
 
-def get_version(rel_path):
-    for line in read(rel_path).splitlines():
-        if line.startswith('__version__'):
-            delim = '"' if '"' in line else "'"
-            return line.split(delim)[1]
-    else:
-        raise RuntimeError("Unable to find version string.")
+import osar_version
 
-here = path.abspath(path.dirname(__file__))
+# Defaults if doing a release build.
+TENSORFLOW_VERSION = 'tensorflow>=2.3.0'
 
-install_requires = [
-                    'importlib-metadata ~= 1.0 ; python_version == "3.8.1"',
-                    'tensorflow >= 2.4.1', 'gin-config >= 0.1.1', 'tf_agents[reverb]>=0.7.1',
-                    'dm-reverb >= 0.2.0', 'tqdm>=4.59.0', 'atari_py>=0.2.6', 'imageio>=2.8.2',
-                    'PILLOW>=7.1.2', 'pandas>=1.2.3', 'pybullet>=3.1.0'
-                    ]
-tests_require = ['matplotlib>=3.1.3',
-                 'gym >= 0.10.5', 'graphviz >= 0.14',
-                 'pydot >= 1.4.1', ]
 
-description = (
-    'OSAR: An Objective Stimuli Active Repeater')
+class BinaryDistribution(Distribution):
 
-this_directory = path.abspath(path.dirname(__file__))
-with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
-    long_description = f.read()
+    def has_ext_modules(self):
+        return True
 
-setup(
-    name='OSAR',
-    version=get_version("OSAR/__init__.py"),
-    include_package_data=True,
-    packages=find_packages(exclude=['docs']),  # Required
-    # package_data={'testdata': ['testdata/*.gin']},
-    install_requires=install_requires,
-    tests_require=tests_require,
-    description=description,
-    long_description=long_description,
-    long_description_content_type='text/markdown',
-    url='https://github.com/ustyuzhaninky/OSAR-keras',  # Optional
-    author='Konstantin Ustyuzhanin',  # Optional
-    classifiers=[  # Optional
-        'Development Status :: 0 - Alpha',
+def find_files(pattern, root):
+    """Return all the files matching pattern below root dir."""
+    for dirpath, _, files in os.walk(root):
+        for filename in fnmatch.filter(files, pattern):
+            yield os.path.join(dirpath, filename)
 
-        # Indicate who your project is intended for
-        'Intended Audience :: Developers',
-        'Intended Audience :: Education',
-        'Intended Audience :: Science/Research',
 
-        # Pick your license as you wish
-        'License :: OSI Approved :: Apache Software License',
+class InstallCommand(InstallCommandBase):
+    """Override the dir where the headers go."""
 
-        # Specify the Python versions you support here. In particular, ensure
-        # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
+    def finalize_options(self):
+        ret = super().finalize_options()
+        # We need to set this manually because we are not using setuptools to
+        # compile the shared libraries we are distributing.
+        self.install_lib = self.install_platlib
+        return ret
 
-        'Topic :: Scientific/Engineering',
-        'Topic :: Scientific/Engineering :: Mathematics',
-        'Topic :: Scientific/Engineering :: Artificial Intelligence',
-        'Topic :: Software Development',
-        'Topic :: Software Development :: Libraries',
-        'Topic :: Software Development :: Libraries :: Python Modules',
+class SetupToolsHelper(object):
+    """Helper to execute `setuptools.setup()`."""
 
-    ],
-    project_urls={  # Optional
-        'Documentation': 'https://github.com/ustyuzhaninky/OSAR-keras',
-        'Bug Reports': 'https://github.com/ustyuzhaninky/OSAR-keras/issues',
-        'Source': 'https://github.com/ustyuzhaninky/OSAR-keras',
-    },
-    license='Apache 2.0',
-    keywords='keras-tensorflow actor-critic-methods gym exploratory q-learning reinforcement-learning python machine learning'
-)
+    def __init__(self, release=False, tf_version_override=None):
+        """Initialize ReleaseBuilder class.
+        Args:
+        release: True to do a release build. False for a nightly build.
+        tf_version_override: Set to override the tf_version dependency.
+        """
+        self.release = release
+        self.tf_version_override = tf_version_override
+    
+    def _get_version(self):
+        """Returns the version and project name to associate with the build."""
+        if self.release:
+            project_name = 'OSAR'
+            version = osar_version.__rel_version__
+        else:
+            project_name = 'OSAR-nightly'
+            version = osar_version.__dev_version__
+            version += datetime.datetime.now().strftime('%Y%m%d')
+
+        return version, project_name
+
+    def _get_required_packages(self):
+        """Returns list of required packages."""
+        required_packages = [
+            'importlib-metadata',
+            'gin-config >= 0.1.1',
+            'atari_py>=0.2.6',
+            'tf_agents[reverb]>=0.7.1',
+            'dm-reverb >= 0.2.0',
+            'tqdm>=4.59.0',
+            'imageio>=2.8.2',
+            'PILLOW>=7.1.2',
+            'pandas>=1.2.3',
+            'pybullet>=3.1.0',
+            'tensorflow >= 2.4.1',
+        ]
+        return required_packages
+    
+    def _get_tensorflow_packages(self):
+        """Returns list of required packages if using OSAR."""
+        tf_packages = []
+        if self.release:
+            tf_version = TENSORFLOW_VERSION
+        else:
+            tf_version = 'tf-nightly'
+
+        # Overrides required versions if tf_version_override is set.
+        if self.tf_version_override:
+            tf_version = self.tf_version_override
+
+        tf_packages.append(tf_version)
+        return tf_packages
+
+    def run_setup(self):
+        # Builds the long description from the README.
+        root_path = os.path.abspath(os.path.dirname(__file__))
+        with codecs.open(os.path.join(root_path, 'README.md'), encoding='utf-8') as f:
+            long_description = f.read()
+
+
+        version, project_name = self._get_version()
+        setup(
+            name=project_name,
+            version=version,
+            include_package_data=True,
+            packages=find_packages(exclude=['docs']),  # Required
+            # package_data={'testdata': ['testdata/*.gin']},
+            install_requires=self._get_required_packages(),
+            extras_require={
+                'tensorflow': self._get_tensorflow_packages(),
+            },
+            distclass=BinaryDistribution,
+            cmdclass={
+                'install': InstallCommand,
+            },
+            headers=list(find_files('*.proto', 'osar')),
+            description='OSAR: An Objective Stimuli Active Repeater',
+            long_description=long_description,
+            long_description_content_type='text/markdown',
+            url='https://github.com/ustyuzhaninky/OSAR-keras',  # Optional
+            author='Konstantin Ustyuzhanin',  # Optional
+            python_requires='>=3',
+            classifiers=[  # Optional
+                'Development Status :: 3 - Alpha',
+
+                # Indicate who your project is intended for
+                'Intended Audience :: Developers',
+                'Intended Audience :: Education',
+                'Intended Audience :: Science/Research',
+                
+
+                # Pick your license as you wish
+                'License :: OSI Approved :: Apache Software License',
+
+                'Programming Language :: Python :: 3.6',
+                'Programming Language :: Python :: 3.7',
+                'Programming Language :: Python :: 3.8',
+
+                'Topic :: Scientific/Engineering',
+                'Topic :: Scientific/Engineering :: Mathematics',
+                'Topic :: Scientific/Engineering :: Artificial Intelligence',
+                'Topic :: Software Development',
+                'Topic :: Software Development :: Libraries',
+                'Topic :: Software Development :: Libraries :: Python Modules',
+
+            ],
+            project_urls={  # Optional
+                'Documentation': 'https://github.com/ustyuzhaninky/OSAR-keras',
+                'Bug Reports': 'https://github.com/ustyuzhaninky/OSAR-keras/issues',
+                'Source': 'https://github.com/ustyuzhaninky/OSAR-keras',
+            },
+            license='Apache 2.0',
+            keywords='keras tensorflow actor-critic-methods gym exploratory q-learning reinforcement learning python machine learning'
+        )
+
+
+if __name__ == '__main__':
+    # Hide argparse help so `setuptools.setup` help prints. This pattern is an
+    # improvement over using `sys.argv` and then `sys.argv.remove`, which also
+    # did not provide help about custom arguments.
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        '--release',
+        action='store_true',
+        help='Pass as true to do a release build')
+    parser.add_argument(
+        '--tf-version',
+        type=str,
+        default=None,
+        help='Overrides TF version required when OSAR is installed, e.g.'
+        'tensorflow>=2.3.0')
+    FLAGS, unparsed = parser.parse_known_args()
+    # Go forward with only non-custom flags.
+    sys.argv.clear()
+    # Downstream `setuptools.setup` expects args to start at the second element.
+    unparsed.insert(0, 'foo')
+    sys.argv.extend(unparsed)
+    setup_tools_helper = SetupToolsHelper(release=FLAGS.release,
+                                            tf_version_override=FLAGS.tf_version)
+    setup_tools_helper.run_setup()

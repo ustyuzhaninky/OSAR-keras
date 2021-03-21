@@ -53,6 +53,7 @@ class ContextGenerator(tf.keras.layers.Layer):
         kernel_constraint: Constraint function applied to the `kernel` weights matrix.
         bias_constraint: Constraint function applied to the bias vector.
         dropout_rate: 0.0 <= float <= 1.0. Dropout rate for hidden units.
+        approximate_zero_reward: Bool. Whether to approxiamte zero-reward gaps (default - False).
 
     # Input shape
         2D tensor with shape: `(batch_size, sequence_length, output_dim)`.
@@ -81,6 +82,7 @@ class ContextGenerator(tf.keras.layers.Layer):
                  bias_regularizer=None,
                  bias_constraint=None,
                  return_probabilities=False,
+                 approximate_zero_reward=False,
                  **kwargs):
         super(ContextGenerator, self).__init__(**kwargs)
 
@@ -99,6 +101,7 @@ class ContextGenerator(tf.keras.layers.Layer):
         self.bias_initializer = bias_initializer
         self.bias_regularizer = bias_regularizer
         self.bias_constraint = bias_constraint
+        self.approximate_zero_reward = approximate_zero_reward
 
         self.n_conv = sum(pow(self.compression_rate, i)
                           for i in range(1, self.n_turns+1))
@@ -169,101 +172,104 @@ class ContextGenerator(tf.keras.layers.Layer):
         rewards = tf.expand_dims(att_mem[:, :, -1], axis=-1)
 
         new_rewards = rewards[..., -1]
-        # non_zero_reward_indexes = tf.where(rewards > 0)
 
-        # def loop_fn(i, tg_idx, new_rewards):
-            
-        #     target_batch_index = tf.cast(tg_idx[0], tf.int32)
-        #     target_step_index = tf.cast(tg_idx[-1], tf.int32)
+        if self.approximate_zero_reward:
+            non_zero_reward_indexes = tf.where(rewards > 0)
 
-        #     Nz = tf.rank(
-        #         tf.where(new_rewards[target_batch_index, :target_step_index] == 0.0))
-        #     target = states[target_batch_index, target_step_index]
+            def loop_fn(i, tg_idx, new_rewards):
+                
+                target_batch_index = tf.cast(tg_idx[0], tf.int32)
+                target_step_index = tf.cast(tg_idx[-1], tf.int32)
 
-        #     if target_step_index > 0:
+                Nz = tf.rank(
+                    tf.where(new_rewards[target_batch_index, :target_step_index] == 0.0))
+                target = states[target_batch_index, target_step_index]
 
-        #         j = tf.constant(0, dtype=tf.int32)
+                if target_step_index > 0:
 
-        #         def replacerIterator(j, new_rewards):
-        #             rewards_shape = tf.shape(new_rewards)
-        #             C = new_rewards[target_batch_index, target_step_index-j]
-        #             target = new_rewards[target_batch_index,
-        #                                  target_step_index]
-        #             if i == 0:
-        #                 row_states_ls = states[target_batch_index,
-        #                                        target_step_index-j-1]
-        #                 row_states_rs = states[target_batch_index,
-        #                                        target_step_index]
-        #             else:
-        #                 row_states_ls = states[target_batch_index,
-        #                                        target_step_index-j-1]
-        #                 row_states_rs = states[target_batch_index,
-        #                                        target_step_index]
+                    j = tf.constant(0, dtype=tf.int32)
 
-        #             diffs_ls = target - row_states_ls
-        #             distance_ls = tf.norm(diffs_ls)
-        #             diffs_rs = target - row_states_rs
-        #             distance_rs = tf.norm(diffs_rs)
-        #             d_state = tf.keras.losses.huber(distance_ls, distance_rs)
-                    
-        #             P = self.kernel[target_step_index-j -
-        #                             1, target_step_index]
-        #             new_item = C * P / (Nz * d_state + P)
+                    def replacerIterator(j, new_rewards):
+                        rewards_shape = tf.shape(new_rewards)
+                        C = new_rewards[target_batch_index, target_step_index-j]
+                        target = new_rewards[target_batch_index,
+                                            target_step_index]
+                        if i == 0:
+                            row_states_ls = states[target_batch_index,
+                                                target_step_index-j-1]
+                            row_states_rs = states[target_batch_index,
+                                                target_step_index]
+                        else:
+                            row_states_ls = states[target_batch_index,
+                                                target_step_index-j-1]
+                            row_states_rs = states[target_batch_index,
+                                                target_step_index]
 
-        #             if target_batch_index == 0:
-        #                 new_item = K.concatenate(
-        #                     [[new_item], new_rewards[target_batch_index+1:, target_step_index-j-1]], axis=0)
-        #             elif target_batch_index < tf.shape(rewards)[0] - 1:
-        #                 new_item = K.concatenate(
-        #                     [new_rewards[:target_batch_index, target_step_index-j-1],
-        #                      [new_item],
-        #                      new_rewards[target_batch_index+1:, target_step_index-1-j]], axis=0)
-        #             else:
-        #                 new_item = K.concatenate(
-        #                     [new_rewards[:target_batch_index, target_step_index-j-1], [new_item]], axis=0)
+                        diffs_ls = target - row_states_ls
+                        distance_ls = tf.norm(diffs_ls)
+                        diffs_rs = target - row_states_rs
+                        distance_rs = tf.norm(diffs_rs)
+                        d_state = tf.keras.losses.huber(distance_ls, distance_rs)
+                        
+                        P = self.kernel[target_step_index-j -
+                                        1, target_step_index]
+                        new_item = C * P / (Nz * d_state + P)
 
-        #             new_item = tf.expand_dims(new_item, axis=-1)
+                        if target_batch_index == 0:
+                            new_item = K.concatenate(
+                                [[new_item], new_rewards[target_batch_index+1:, target_step_index-j-1]], axis=0)
+                        elif target_batch_index < tf.shape(rewards)[0] - 1:
+                            new_item = K.concatenate(
+                                [new_rewards[:target_batch_index, target_step_index-j-1],
+                                [new_item],
+                                new_rewards[target_batch_index+1:, target_step_index-1-j]], axis=0)
+                        else:
+                            new_item = K.concatenate(
+                                [new_rewards[:target_batch_index, target_step_index-j-1], [new_item]], axis=0)
 
-        #             if j == Nz:
-        #                 new_rewards = K.concatenate(
-        #                     [new_item, new_rewards[:, target_step_index-j:]], axis=1)
-        #             else:
-        #                 new_rewards = K.concatenate(
-        #                     [new_rewards[:, :target_step_index-j-1], new_item, new_rewards[:, target_step_index-j:]], axis=1)
-                    
-        #             return j+1, new_rewards # tf.reshape(new_rewards, rewards_shape)
-        #         j, new_rewards = tf.while_loop(
-        #             lambda j, new_rewards: j < Nz,
-        #             replacerIterator,
-        #             [j, new_rewards],
-        #             swap_memory=True,
-        #             # parallel_iterations=100,
-        #         )
+                        new_item = tf.expand_dims(new_item, axis=-1)
 
-        #         return (i+1, non_zero_reward_indexes[i+1], new_rewards)
-        #     else:
-        #         return (i+1, non_zero_reward_indexes[i+1], new_rewards)
-            
-        # def false_fn(new_rewards):
-        #     i = tf.constant(0, dtype=tf.int32)
-        #     tf_idx = non_zero_reward_indexes[i]
-            
-        #     i, tf_idx, new_rewards = tf.while_loop(
-        #         lambda i, tf_idx, new_rewards: tf.less(
-        #             i, tf.cast(tf.shape(non_zero_reward_indexes)[0], tf.int32)-1),
-        #         loop_fn,
-        #         [i, tf_idx, new_rewards],
-        #         swap_memory=True,
-        #         # parallel_iterations=100,
-        #     )
+                        if j == Nz:
+                            new_rewards = K.concatenate(
+                                [new_item, new_rewards[:, target_step_index-j:]], axis=1)
+                        else:
+                            new_rewards = K.concatenate(
+                                [new_rewards[:, :target_step_index-j-1], new_item, new_rewards[:, target_step_index-j:]], axis=1)
+                        
+                        return j+1, new_rewards # tf.reshape(new_rewards, rewards_shape)
+                    j, new_rewards = tf.while_loop(
+                        lambda j, new_rewards: j < Nz,
+                        replacerIterator,
+                        [j, new_rewards],
+                        swap_memory=True,
+                        # parallel_iterations=100,
+                    )
 
-        #     return new_rewards
+                    return (i+1, non_zero_reward_indexes[i+1], new_rewards)
+                else:
+                    return (i+1, non_zero_reward_indexes[i+1], new_rewards)
+                
+            def false_fn(new_rewards):
+                i = tf.constant(0, dtype=tf.int32)
+                tf_idx = non_zero_reward_indexes[i]
+                
+                i, tf_idx, new_rewards = tf.while_loop(
+                    lambda i, tf_idx, new_rewards: tf.less(
+                        i, tf.cast(tf.shape(non_zero_reward_indexes)[0], tf.int32)-1),
+                    loop_fn,
+                    [i, tf_idx, new_rewards],
+                    swap_memory=True,
+                    # parallel_iterations=100,
+                )
+
+                return new_rewards
 
         new_rewards = tf.einsum('in,nn->in', new_rewards, self.kernel)
         
-        # if non_zero_reward_indexes.shape[0] != None and non_zero_reward_indexes.shape[0] != 0:
-        #     new_rewards = false_fn(new_rewards)
-        #     new_rewards = K.reshape(new_rewards, (rewards.shape[0], rewards.shape[1]))
+        if self.approximate_zero_reward:
+            if non_zero_reward_indexes.shape[0] != None and non_zero_reward_indexes.shape[0] != 0:
+                new_rewards = false_fn(new_rewards)
+                new_rewards = K.reshape(new_rewards, (rewards.shape[0], rewards.shape[1]))
         new_rewards = K.expand_dims(new_rewards, axis=-1)
 
         redacted_memory = K.concatenate(
@@ -272,7 +278,6 @@ class ContextGenerator(tf.keras.layers.Layer):
         )
 
         return redacted_memory
-        # return att_mem
     
     def get_config(self):
         config = {
