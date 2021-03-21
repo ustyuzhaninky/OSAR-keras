@@ -92,15 +92,15 @@ class SetupToolsHelper(object):
         """Returns list of required packages."""
         required_packages = [
             'importlib-metadata',
-            'gin-config >= 0.1.1',
-            'atari_py>=0.2.6',
-            'tf_agents[reverb]>=0.7.1',
-            'dm-reverb >= 0.2.0',
-            'tqdm>=4.59.0',
-            'imageio>=2.8.2',
-            'PILLOW>=7.1.2',
-            'pandas>=1.2.3',
-            'pybullet>=3.1.0',
+            'gin-config',
+            'atari_py',
+            'tf_agents[reverb]',
+            'dm-reverb',
+            'tqdm',
+            'imageio',
+            'PILLOW',
+            'pandas',
+            'pybullet',
             'tensorflow >= 2.4.1',
         ]
         return required_packages
