@@ -78,7 +78,7 @@ class ContextGenerator(tf.keras.layers.Layer):
                  kernel_initializer='glorot_uniform',
                  kernel_regularizer=None,
                  kernel_constraint=None,
-                 bias_initializer='zeros',
+                 bias_initializer='glorot_uniform',
                  bias_regularizer=None,
                  bias_constraint=None,
                  return_probabilities=False,
@@ -161,7 +161,7 @@ class ContextGenerator(tf.keras.layers.Layer):
         
         context_mem = self.memory(inputs)
 
-        context_mem = (context_mem - K.mean(context_mem, axis=1)) / K.std(context_mem, axis=1)
+        # context_mem = (context_mem - K.mean(context_mem, axis=1)) / K.std(context_mem, axis=1)
         
         att_mem, probabilities = self.attention(context_mem)
         

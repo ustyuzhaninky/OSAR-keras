@@ -103,7 +103,7 @@ class HelixMemory(tf.keras.layers.Layer):
         self.memory = self.add_weight(
             shape=(self.batch_size, self.memory_len +
                    n_conv, output_dim),
-            initializer='zeros',
+            initializer='glorot_uniform',
             trainable=False,
             name=f'{self.name}-memory',
         )

@@ -81,7 +81,7 @@ class EventSpace(tf.keras.layers.Layer):
         kernel_initializer='glorot_uniform',
         kernel_regularizer=None,
         kernel_constraint=None,
-        bias_initializer='zeros',
+        bias_initializer='glorot_uniform',
         bias_regularizer=None,
         bias_constraint=None,
         return_space:bool=False,

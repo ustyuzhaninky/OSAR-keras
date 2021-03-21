@@ -169,7 +169,7 @@ class TrialAgent(tf_agent.TFAgent):
             self._network, None, input_spec=net_observation_spec,
             name='TargetNetwork')
         
-        self._target_network.frozen = True
+        # self._target_network.frozen = True
 
         self._check_network_output(self._network, 'network')
         self._check_network_output(self._target_network, 'target_network')

@@ -135,11 +135,11 @@ class Experiment:
         self._agent = agent_generator(**agent_specs)
 
         tf_eval_policy = self._agent.policy
-        eager_eval_policy = py_tf_eager_policy.PyTFEagerPolicy(
+        self._eval_policy = py_tf_eager_policy.PyTFEagerPolicy(
             tf_eval_policy, use_tf_function=True)
 
         tf_collect_policy = self._agent.collect_policy
-        eager_collect_policy = py_tf_eager_policy.PyTFEagerPolicy(
+        self._collect_policy = py_tf_eager_policy.PyTFEagerPolicy(
             tf_collect_policy, use_tf_function=True)
 
         search_q_network = q_network.QNetwork(
@@ -206,7 +206,7 @@ class Experiment:
         env_step_metric = py_metrics.EnvironmentSteps()
         self._collect_actor = actor.Actor(
             self._train_env,
-            eager_collect_policy,
+            self._collect_policy,
             train_step_counter,
             steps_per_run=1,
             metrics=actor.collect_metrics(10),
@@ -218,7 +218,7 @@ class Experiment:
         
         self._eval_actor = actor.Actor(
             self._eval_env,
-            eager_eval_policy,
+            self._eval_policy,
             train_step_counter,
             episodes_per_run=num_eval_episodes,
             metrics=actor.eval_metrics(self._num_eval_episodes),
@@ -420,7 +420,8 @@ class Runner:
 
                     experiment.save(os.path.join(self._logpath, 'logs',
                                                  self._model_name, 'cache'))
-                                                    
+
+                    del experiment
                     # Saving results of the game
                     if len(returns) > 0:
                         self._ds_returns.append(pd.DataFrame(
@@ -461,6 +462,7 @@ class Runner:
                 experiment.save(os.path.join(self._logpath, 'logs',
                                              self._model_name, 'cache'))
 
+                del experiment
                 # Saving results of the game
                 if len(returns) > 0:
                     self._ds_returns.append(pd.DataFrame(

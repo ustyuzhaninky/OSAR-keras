@@ -86,13 +86,13 @@ class QueueMemory(tf.keras.layers.Layer):
 
         self.memory = self.add_weight(
             shape=(batch_size, self.memory_len, feature_dim),
-            initializer='zeros',
+            initializer='glorot_uniform',
             trainable=False,
             name=f'{self.name}_memory',
         )
         self.index = self.add_weight(
             shape=(batch_size, self.memory_len, 1),
-            initializer='zeros',
+            initializer='glorot_uniform',
             trainable=False,
             name=f'{self.name}_index',
         )
