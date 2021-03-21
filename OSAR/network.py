@@ -96,7 +96,7 @@ class OSARNetwork(q_network.QNetwork):
                 input_dropout_layer_params=None,
                 fc_layer_params=(10,),
                 output_fc_layer_params=(10, 10),
-                conv_type='1d',
+                conv_type='2d',
                 dtype=tf.float32,
                  name='OSARNetwork'):
         """Creates an instance of `OSARNetwork`.
@@ -222,11 +222,13 @@ class OSARNetwork(q_network.QNetwork):
             observation, step_type=step_type, network_state=network_state,
             training=training)
         
+        action_memory = self._action_memory
+        
         state = tf.expand_dims(state, axis=0)
         reward = tf.expand_dims(tf.expand_dims(reward, axis=-1), axis=-1)
         context = K.concatenate(
             [state,
-             self._action_memory,
+             action_memory,
              reward], axis=-1)
         context = self._context_generator(context, training=training)
         distance, importance, context_updated = self._circuit(context, training=training, frozen=self.frozen)
@@ -235,8 +237,10 @@ class OSARNetwork(q_network.QNetwork):
         action = self._repeater(context)
 
         q_value = self._q_value_layer(action, training=training)
+        
+        new_memory = q_value
         self.add_update(K.update(self._action_memory,
-                                 K.expand_dims(q_value, axis=1)))
+                                 K.expand_dims(new_memory, axis=0)))
         
         logits = q_value
 

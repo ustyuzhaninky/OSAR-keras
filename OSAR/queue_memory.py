@@ -173,11 +173,6 @@ class QueueMemory(tf.keras.layers.Layer):
                     [reduced_index, K.expand_dims(K.expand_dims(updated_index_by_space, axis=1), axis=1)], axis=1)
                 self.add_update(K.update(self.index, new_priority))
                 self.add_update(K.update(self.memory, new_memory))
-                
-                # self.add_update(K.update(self.memory, self._replace_by_index(
-                #     self.memory, max_index, updated_memory_by_space)))
-                # self.add_update(K.update(self.index, self._replace_by_index(
-                #     self.index, max_index, K.expand_dims(updated_index_by_space, axis=1))))
             
             if (filter_queue.shape[0] == 0) & (filter_space.shape[0] == 0):
                 min_reward_index = tf.argmin(self.index, axis=1)[0]

@@ -56,15 +56,21 @@ from tf_agents.train.utils import strategy_utils
 from tf_agents.train.utils import train_utils
 from tf_agents.policies import py_tf_eager_policy
 from tf_agents.policies import random_py_policy
+from tf_agents.policies import  boltzmann_policy
+from tf_agents.policies import q_policy
 from tf_agents.replay_buffers import reverb_replay_buffer
 from tf_agents.replay_buffers import reverb_utils
 from tf_agents.train import actor
 from tf_agents.metrics import py_metrics
 from tf_agents.trajectories import trajectory
+from tf_agents import trajectories
 from tf_agents.utils import common
 from tf_agents.typing import types
 from tf_agents.specs import tensor_spec
 import pandas as pd
+from tf_agents.drivers import py_driver
+from tf_agents.environments import py_environment
+from tf_agents.environments import tf_environment
 
 from . import OSARNetwork
 
@@ -127,21 +133,26 @@ class Experiment:
         train_step_counter = train_utils.create_train_step()
         agent_specs['train_step_counter'] = train_step_counter
         self._agent = agent_generator(**agent_specs)
-        self._eval_policy = tf.function(self._agent.policy.action)
-        self._collect_policy = tf.function(self._agent.collect_policy.action)
-        self._train = tf.function(self._agent.train)
 
         tf_eval_policy = self._agent.policy
-        self._eval_policy = py_tf_eager_policy.PyTFEagerPolicy(
+        eager_eval_policy = py_tf_eager_policy.PyTFEagerPolicy(
             tf_eval_policy, use_tf_function=True)
 
         tf_collect_policy = self._agent.collect_policy
-        self._collect_policy = py_tf_eager_policy.PyTFEagerPolicy(
+        eager_collect_policy = py_tf_eager_policy.PyTFEagerPolicy(
             tf_collect_policy, use_tf_function=True)
-        self._random_policy = random_py_policy.RandomPyPolicy(
-            self._train_env.time_step_spec(),
-            self._train_env.action_spec(),
-        )
+
+        search_q_network = q_network.QNetwork(
+            agent_specs['observation_spec'],
+            action_spec=agent_specs['action_spec'])
+        search_policy = q_policy.QPolicy(
+            agent_specs['time_step_spec'],
+            agent_specs['action_spec'],
+            q_network=search_q_network)
+        self._search_policy =  boltzmann_policy.BoltzmannPolicy(
+            search_policy, temperature=0.4)
+        self._search_policy = py_tf_eager_policy.PyTFEagerPolicy(
+            tf_collect_policy, use_tf_function=True)
 
         sequence_length = 2
 
@@ -150,7 +161,7 @@ class Experiment:
         table = reverb.Table(
             table_name,
             max_size=self._replay_buffer_max_length,
-            sampler=reverb.selectors.Uniform(),
+            sampler=reverb.selectors.Prioritized(priority_exponent=0.8),
             remover=reverb.selectors.Fifo(),
             rate_limiter=reverb.rate_limiters.MinSize(1))
 
@@ -184,7 +195,7 @@ class Experiment:
 
         initial_collect_actor = actor.Actor(
             self._train_env,
-            self._random_policy,
+            self._search_policy,
             train_step_counter,
             steps_per_run=initial_collect_steps,
             # observers=[uniform_observer],
@@ -195,7 +206,7 @@ class Experiment:
         env_step_metric = py_metrics.EnvironmentSteps()
         self._collect_actor = actor.Actor(
             self._train_env,
-            self._collect_policy,
+            eager_collect_policy,
             train_step_counter,
             steps_per_run=1,
             metrics=actor.collect_metrics(10),
@@ -207,7 +218,7 @@ class Experiment:
         
         self._eval_actor = actor.Actor(
             self._eval_env,
-            self._eval_policy,
+            eager_eval_policy,
             train_step_counter,
             episodes_per_run=num_eval_episodes,
             metrics=actor.eval_metrics(self._num_eval_episodes),
@@ -240,27 +251,6 @@ class Experiment:
         for metric in self._eval_actor.metrics:
             results[metric.name] = metric.result()
         return results
-
-    def _compute_avg_return(self,
-                            environment: tf_py_environment.TFPyEnvironment,
-                            policy,#: py_tf_policy,
-                            num_episodes=10):
-        total_return = 0.0
-        for _ in range(num_episodes):
-
-            time_step = environment.reset()
-            episode_return = 0.0
-
-            while not time_step.is_last():
-                # environment.render()
-                action_step = policy(time_step)
-                time_step = environment.step(action_step.action)
-                episode_return += time_step.reward
-            total_return += episode_return
-
-        avg_return = total_return / num_episodes
-        return avg_return[0]
-
 
     def __call__(self, cache_dir, progress: bool = True):
         # writer = tf.summary.create_file_writer(cache_dir)    
@@ -326,16 +316,38 @@ class Experiment:
         return
     
     def evaluate(self, filename:str, max_episodes: types.Int=5, fps: types.Int=30):
+        env = self._eval_env
+        tf_eval_policy = self._agent.policy
+        eager_eval_policy = py_tf_eager_policy.PyTFEagerPolicy(
+            tf_eval_policy, use_tf_function=True)
+
+        if isinstance(env, py_environment.PyEnvironment):
+            self._driver = py_driver.PyDriver(
+                env,
+                eager_eval_policy,
+                [],
+                max_steps=1,
+                max_episodes=1)
+        elif isinstance(env, tf_environment.TFEnvironment):
+            raise ValueError("Doesn't support TFEnvironments yet.")
+        else:
+            raise ValueError("Unknown environment type.")
+
+        time_step = env.reset()
+        end_term = time_step.is_last()
+
+        policy_state = self._agent.policy.get_initial_state(
+            env.batch_size or 1)
         
         with imageio.get_writer(filename, fps=fps) as video:
             for _ in range(max_episodes):
-                time_step = self._eval_env.reset()
-                video.append_data(tf.cast(self._eval_env.render(), tf.uint8).numpy()[0])
-                while not time_step.is_last():
-                    action_step = self._eval_policy(time_step)
-                    time_step = self._eval_env.step(action_step.action)
+                video.append_data(tf.cast(env.render(), tf.uint8).numpy())
+                while not end_term:
+                    time_step, policy_state = self._driver.run(
+                        time_step, policy_state)
+                    end_term = time_step.is_last()
                     video.append_data(
-                        tf.cast(self._eval_env.render(), tf.uint8).numpy()[0])
+                        tf.cast(env.render(), tf.uint8).numpy())
 
 
 @gin.configurable

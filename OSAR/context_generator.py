@@ -140,13 +140,13 @@ class ContextGenerator(tf.keras.layers.Layer):
             (batch_dim, self.memory_len+self.n_conv, concat_features))
         self.attention.built = True
 
-        # self.kernel = self.add_weight(
-        #     f'{self.name}-kernel',
-        #     shape=[self.memory_len+self.n_conv, self.memory_len+self.n_conv],
-        #     initializer=self.kernel_initializer,
-        #     regularizer=self.kernel_regularizer,
-        #     dtype=self.dtype,
-        #     trainable=True)
+        self.kernel = self.add_weight(
+            f'{self.name}-kernel',
+            shape=[self.memory_len+self.n_conv, self.memory_len+self.n_conv],
+            initializer=self.kernel_initializer,
+            regularizer=self.kernel_regularizer,
+            dtype=self.dtype,
+            trainable=True)
 
         self.built = True
     
@@ -157,16 +157,18 @@ class ContextGenerator(tf.keras.layers.Layer):
         fatures_dim = tf.shape(inputs)[-1]
         
         context_mem = self.memory(inputs)
+
+        context_mem = (context_mem - K.mean(context_mem, axis=1)) / K.std(context_mem, axis=1)
         
         att_mem, probabilities = self.attention(context_mem)
         
         # Calculating decomposition gate
         
-        # states = att_mem[:, :, :self.n_states]
-        # actions = att_mem[:, :, self.n_states:-1]
-        # rewards = tf.expand_dims(att_mem[:, :, -1], axis=-1)
+        states = att_mem[:, :, :self.n_states]
+        actions = att_mem[:, :, self.n_states:-1]
+        rewards = tf.expand_dims(att_mem[:, :, -1], axis=-1)
 
-        # new_rewards = rewards#[..., -1]
+        new_rewards = rewards[..., -1]
         # non_zero_reward_indexes = tf.where(rewards > 0)
 
         # def loop_fn(i, tg_idx, new_rewards):
@@ -257,20 +259,20 @@ class ContextGenerator(tf.keras.layers.Layer):
 
         #     return new_rewards
 
-        # new_rewards = tf.einsum('in,nn->in', new_rewards, self.kernel)
+        new_rewards = tf.einsum('in,nn->in', new_rewards, self.kernel)
         
         # if non_zero_reward_indexes.shape[0] != None and non_zero_reward_indexes.shape[0] != 0:
         #     new_rewards = false_fn(new_rewards)
         #     new_rewards = K.reshape(new_rewards, (rewards.shape[0], rewards.shape[1]))
-        # new_rewards = K.expand_dims(new_rewards, axis=-1)
+        new_rewards = K.expand_dims(new_rewards, axis=-1)
 
-        # redacted_memory = K.concatenate(
-        #     [states, actions, new_rewards],
-        #     axis=-1
-        # )
+        redacted_memory = K.concatenate(
+            [states, actions, new_rewards],
+            axis=-1
+        )
 
-        # return redacted_memory
-        return att_mem
+        return redacted_memory
+        # return att_mem
     
     def get_config(self):
         config = {

@@ -80,7 +80,7 @@ class TrialAgent(tf_agent.TFAgent):
             update_period: types.Int = 1,
             td_errors_loss_fn: Optional[types.LossFn] = None,
             gamma: types.Float = 1.0,
-            batch_size: types.Int = 1.0,
+            batch_size: types.Int = 1,
             epsilon_greedy: types.FloatOrReturningFloat = 0.1,
             n_step_update: int = 1,
             boltzmann_temperature: Optional[types.Int] = None,
@@ -169,7 +169,7 @@ class TrialAgent(tf_agent.TFAgent):
             self._network, None, input_spec=net_observation_spec,
             name='TargetNetwork')
         
-        # self._target_network.frozen = True
+        self._target_network.frozen = True
 
         self._check_network_output(self._network, 'network')
         self._check_network_output(self._target_network, 'target_network')

@@ -73,6 +73,9 @@ class TrialPolicy(q_policy.QPolicy):
         if observation_and_action_constraint_splitter is not None:
             network_observation, mask = observation_and_action_constraint_splitter(
                 network_observation)
+        # if len(network_observation.shape) == 1:
+        #     network_observation = tf.expand_dims(network_observation, axis=0)
+        #     network_reward = tf.expand_dims(network_reward, axis=0)
 
         logits, policy_state = self._q_network(
             network_observation,
