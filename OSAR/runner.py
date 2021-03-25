@@ -39,6 +39,7 @@ from typing import Any, Callable, Dict, Optional, Sequence, Text, List
 import tensorflow as tf
 
 from tf_agents.environments import suite_pybullet
+from tf_agents.environments.wrappers import PyEnvironmentBaseWrapper
 from tf_agents import agents
 from tf_agents.agents.dqn import dqn_agent
 from tf_agents.drivers import dynamic_step_driver
@@ -71,10 +72,38 @@ import pandas as pd
 from tf_agents.drivers import py_driver
 from tf_agents.environments import py_environment
 from tf_agents.environments import tf_environment
+from tf_agents.trajectories import time_step as ts
 
 from . import OSARNetwork
 
 __all__ = ['Experiment', 'Runner']
+
+@gin.configurable
+class RewardClipWrapper(PyEnvironmentBaseWrapper):
+  """Clips reward to values of -1, 0, 1 and stores both."""
+
+  def __init__(self, env: py_environment.PyEnvironment):
+    """Creates a reward clip wrapper.
+    Args:
+      env: Environment to wrap.
+    """
+    super(RewardClipWrapper, self).__init__(env)
+
+    self.reward = []
+    self.clipped_reward = []
+
+  def _step(self, action):
+
+    time_step = self._env.step(action)
+    clipped_reward = np.sign(time_step.reward)
+
+    self.reward.append(time_step.reward)
+    self.clipped_reward.append(clipped_reward)
+
+    clipped_reward = np.asarray(clipped_reward,
+                              dtype=np.asarray(time_step.reward).dtype)
+    return ts.TimeStep(time_step.step_type, clipped_reward, time_step.discount,
+                       time_step.observation)
 
 
 @gin.configurable
@@ -82,6 +111,7 @@ class Experiment:
     def __init__(
             self,
             # Agent Options
+            cache_dir: Text = '',
             agent_specs: Dict=None,
             agent_generator: Callable[[Dict], agents.TFAgent] = None,
             # Environment Options
@@ -108,14 +138,15 @@ class Experiment:
         self._eval_interval = eval_interval
         self._n_prefetch = n_prefetch
         self._n_step_update = n_step_update
+        self._env_name = env_name
 
         # Setting up training and evaluation environments
         train_py_env = suite_pybullet.load(
             env_name)  # suite_gym.load(env_name)
         eval_py_env = suite_pybullet.load(
             env_name)  # suite_gym.load(env_name)
-        self._train_env = train_py_env
-        self._eval_env = eval_py_env
+        self._train_env = RewardClipWrapper(train_py_env)
+        self._eval_env = RewardClipWrapper(eval_py_env)
         # TODO: Implement gym support when Actor supports `TFPyEnvironment`s
         # self._train_env = tf_py_environment.TFPyEnvironment(train_py_env)
         # self._eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
@@ -133,6 +164,7 @@ class Experiment:
         train_step_counter = train_utils.create_train_step()
         agent_specs['train_step_counter'] = train_step_counter
         self._agent = agent_generator(**agent_specs)
+        self.episode_step_counter = agent_specs['train_step_counter']
 
         tf_eval_policy = self._agent.policy
         self._eval_policy = py_tf_eager_policy.PyTFEagerPolicy(
@@ -203,14 +235,15 @@ class Experiment:
         )
         initial_collect_actor.run()
 
+        learner.TRAIN_DIR = cache_dir
         env_step_metric = py_metrics.EnvironmentSteps()
         self._collect_actor = actor.Actor(
             self._train_env,
             self._collect_policy,
             train_step_counter,
             steps_per_run=1,
-            metrics=actor.collect_metrics(10),
-            summary_dir=os.path.join(tempdir, learner.TRAIN_DIR),
+            metrics=actor.collect_metrics(self._num_eval_episodes),
+            summary_dir=cache_dir,
             observers=[
                 # uniform_observer,
                 rb_observer,
@@ -222,15 +255,14 @@ class Experiment:
             train_step_counter,
             episodes_per_run=num_eval_episodes,
             metrics=actor.eval_metrics(self._num_eval_episodes),
-            summary_dir=os.path.join(tempdir, 'eval'),
+            summary_dir=os.path.join(cache_dir, 'eval'),
         )
 
 
         # Triggers to save the agent's policy checkpoints.
-        saved_model_dir = ''
         learning_triggers = [
             triggers.PolicySavedModelTrigger(
-                saved_model_dir,
+                cache_dir,
                 self._agent,
                 train_step_counter,
                 interval=policy_save_interval),
@@ -239,10 +271,12 @@ class Experiment:
         ]
         
         self._agent_learner = learner.Learner(
-            tempdir,
+            cache_dir,
             train_step_counter,
             self._agent,
             experience_dataset_fn,
+            checkpoint_interval=self._eval_interval,
+            summary_interval=self._eval_interval,
             triggers=learning_triggers)
 
     def get_eval_metrics(self):
@@ -252,13 +286,11 @@ class Experiment:
             results[metric.name] = metric.result()
         return results
 
-    def __call__(self, cache_dir, progress: bool = True):
-        # writer = tf.summary.create_file_writer(cache_dir)    
-        # with writer.as_default():
-        #     returns, trajectory, losses = self.call(progress)
-        #     writer.flush()
-        # return returns, trajectory, losses
-        return self.call(progress)
+    def __call__(self, progress: bool = True):
+        with self._agent_learner.train_summary_writer.as_default():
+            returns = self.call(progress)
+            self._agent_learner.train_summary_writer.flush()
+        return returns
 
     def call(self, progress: bool=True):
         # Reset the train step
@@ -290,6 +322,8 @@ class Experiment:
                         t.set_postfix(
                             train_loss=loss_info.loss.numpy(), avg_return=avg_return)
                         returns.append(metrics["AverageReturn"])
+                        tf.summary.scalar('Rewards/AverageReturn', avg_return,
+                                          self.episode_step_counter)
         else:
             for i in range(self._num_iterations):
                 # Training.
@@ -305,15 +339,27 @@ class Experiment:
                     metrics = self.get_eval_metrics()
                     avg_return = metrics["AverageReturn"]
                     returns.append(metrics["AverageReturn"])
+                    tf.summary.scalar('Rewards/AverageReturn', avg_return,
+                                      self.episode_step_counter)
 
         self._rb_observer.close()
         self._reverb_server.stop()
         
         return np.array(returns)
     
-    def save(self, cache_dir):
+    def save(self):
         # TODO: Implement saving the agent
-        return
+        
+        dataset_folder = os.path.join(learner.TRAIN_DIR, 'datasets')
+
+        dataset = pd.DataFrame(np.concatenate([np.array([self._train_env.reward]).T,
+                                              np.array([self._train_env.clipped_reward]).T], axis=-1),
+                     columns=[
+            'Uclipped Return Train', 'Clipped Return Train'],
+            )
+        
+        dataset.to_csv(os.path.join(dataset_folder, f'{self._env_name}-steps.csv'))
+
     
     def evaluate(self, filename:str, max_episodes: types.Int=5, fps: types.Int=30):
         env = self._eval_env
@@ -397,13 +443,13 @@ class Runner:
                 for i in t:
                     item = self._list_configs[i]
                     self._env_names.append(item.get('env_name'))
+                    cache_dir = os.path.join(
+                            self._logpath, 'logs', self._model_name)
+                    item['cache_dir'] = cache_dir
                     experiment = Experiment(
                         **item
                     )
-                    cache_dir = os.path.join(
-                            self._logpath, 'logs', self._model_name)
                     returns = experiment(
-                        cache_dir,
                         progress=experiment_progress)
                     t.set_description(f'Game {i}/{n_games}')
                     if len(returns) > 0:
@@ -418,8 +464,7 @@ class Runner:
                         self._logpath, 'logs', self._model_name, 'videos', f"{item.get('env_name')}-trained.gif")
                     experiment.evaluate(filename)
 
-                    experiment.save(os.path.join(self._logpath, 'logs',
-                                                 self._model_name, 'cache'))
+                    experiment.save()
 
                     del experiment
                     # Saving results of the game
@@ -442,13 +487,13 @@ class Runner:
             for i in range(n_games):
                 item = self._list_configs[i]
                 self._env_names.append(item.get('env_name'))
+                cache_dir = os.path.join(
+                            self._logpath, 'logs', self._model_name)
+                item['cache_dir'] = cache_dir
                 experiment = Experiment(
                     **item
                     )
-                cache_dir = os.path.join(
-                     self._logpath, 'logs', self._model_name)
                 returns = experiment(
-                    cache_dir,
                     progress=experiment_progress)
 
                 returns = returns.reshape(
@@ -459,8 +504,7 @@ class Runner:
                     self._logpath, 'logs', self._model_name, 'videos', f"{item.get('env_name')}-trained.gif")
                 experiment.evaluate(filename)
 
-                experiment.save(os.path.join(self._logpath, 'logs',
-                                             self._model_name, 'cache'))
+                experiment.save()
 
                 del experiment
                 # Saving results of the game

@@ -169,7 +169,7 @@ class TrialAgent(tf_agent.TFAgent):
             self._network, None, input_spec=net_observation_spec,
             name='TargetNetwork')
         
-        # self._target_network.frozen = True
+        self._target_network.frozen = True
 
         self._check_network_output(self._network, 'network')
         self._check_network_output(self._target_network, 'target_network')
@@ -218,6 +218,7 @@ class TrialAgent(tf_agent.TFAgent):
             train_step_counter=train_step_counter,
             validate_args=False
         )
+        # self._cum_reward = 0.0
 
 
         if network.state_spec:
@@ -232,7 +233,7 @@ class TrialAgent(tf_agent.TFAgent):
             self._as_transition = data_converter.AsNStepTransition(
                 self.data_context, gamma=gamma, n=1)
 
-        self.episode_step_counter = tf.Variable(0, dtype=tf.int64)
+        self.episode_step_counter = train_step_counter
 
     def _check_action_spec(self, action_spec):
         flat_action_spec = tf.nest.flatten(action_spec)
@@ -252,6 +253,7 @@ class TrialAgent(tf_agent.TFAgent):
                 'Action specs should have minimum of 0, but saw: {0}'.format(spec))
 
         self._num_actions = spec.maximum - spec.minimum + 1
+        
 
     def _check_network_output(self, net, label):
         """Check outputs of q_net and target_q_net against expected shape.
@@ -343,9 +345,8 @@ class TrialAgent(tf_agent.TFAgent):
         action_spec = cast(tensor_spec.BoundedTensorSpec, self._action_spec)
         multi_dim_actions = len(action_spec.shape) > 0
         
-        if self._debug_summaries:
-            tf.summary.scalar('network_reward', network_reward[0],
-                              self.episode_step_counter)
+        tf.summary.scalar('Rewards/network_reward', network_reward[0],
+                          self.episode_step_counter)
 
         return common.index_with_actions(
             q_values,
@@ -381,6 +382,7 @@ class TrialAgent(tf_agent.TFAgent):
     # Use @common.function in graph mode or for speeding up.
     @common.function
     def _train(self, experience, weights):
+        print(self.train_step_counter, self.train_step_counter)
         with tf.GradientTape() as tape:
             loss_info = self._loss(
                 experience,
