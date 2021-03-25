@@ -69,9 +69,9 @@ class QueueMemory(tf.keras.layers.Layer):
 
         self.memory_len = memory_len
         self.epsilon_probability = epsilon_probability
-        self.kernel_initializer = kernel_initializer
-        self.kernel_regularizer = kernel_regularizer
-        self.kernel_constraint = kernel_constraint
+        self.kernel_initializer = tf.keras.initializers.get(kernel_initializer)
+        self.kernel_regularizer = tf.keras.regularizers.get(kernel_regularizer)
+        self.kernel_constraint = tf.keras.constraints.get(kernel_constraint)
         self.index = None
         self.memory = None
 

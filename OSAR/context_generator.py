@@ -95,12 +95,12 @@ class ContextGenerator(tf.keras.layers.Layer):
         self.dropout = dropout
         self.attention_dropout = attention_dropout
         self.use_bias = use_bias
-        self.kernel_initializer = kernel_initializer
-        self.kernel_regularizer = kernel_regularizer
-        self.kernel_constraint = kernel_constraint
-        self.bias_initializer = bias_initializer
-        self.bias_regularizer = bias_regularizer
-        self.bias_constraint = bias_constraint
+        self.kernel_initializer = tf.keras.initializers.get(kernel_initializer)
+        self.kernel_regularizer = tf.keras.regularizers.get(kernel_regularizer)
+        self.kernel_constraint = tf.keras.constraints.get(kernel_constraint)
+        self.bias_initializer = tf.keras.initializers.get(bias_initializer)
+        self.bias_regularizer = tf.keras.regularizers.get(bias_regularizer)
+        self.bias_constraint = tf.keras.constraints.get(bias_constraint)
         self.approximate_zero_reward = approximate_zero_reward
 
         self.n_conv = sum(pow(self.compression_rate, i)
@@ -160,8 +160,8 @@ class ContextGenerator(tf.keras.layers.Layer):
         fatures_dim = tf.shape(inputs)[-1]
         
         context_mem = self.memory(inputs)
-
-        # context_mem = (context_mem - K.mean(context_mem, axis=1)) / K.std(context_mem, axis=1)
+        context_mem = context_mem - tf.reduce_min(context_mem, axis=1, keepdims=True) / (tf.reduce_max(
+            context_mem, axis=1, keepdims=True) - tf.reduce_min(context_mem, axis=1, keepdims=True))
         
         att_mem, probabilities = self.attention(context_mem)
         

@@ -90,12 +90,12 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         self.memory_len = memory_len
         self.dropout = dropout
         self.use_bias = use_bias
-        self.kernel_initializer = kernel_initializer
-        self.kernel_regularizer = kernel_regularizer
-        self.kernel_constraint = kernel_constraint
-        self.bias_initializer = bias_initializer
-        self.bias_regularizer = bias_regularizer
-        self.bias_constraint = bias_constraint
+        self.kernel_initializer = tf.keras.initializers.get(kernel_initializer)
+        self.kernel_regularizer = tf.keras.regularizers.get(kernel_regularizer)
+        self.kernel_constraint = tf.keras.constraints.get(kernel_constraint)
+        self.bias_initializer = tf.keras.initializers.get(bias_initializer)
+        self.bias_regularizer = tf.keras.regularizers.get(bias_regularizer)
+        self.bias_constraint = tf.keras.constraints.get(bias_constraint)
 
 
     def build(self, input_shape):
