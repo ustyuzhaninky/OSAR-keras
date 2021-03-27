@@ -218,7 +218,6 @@ class TrialAgent(tf_agent.TFAgent):
             train_step_counter=train_step_counter,
             validate_args=False
         )
-        # self._cum_reward = 0.0
 
 
         if network.state_spec:
@@ -232,8 +231,6 @@ class TrialAgent(tf_agent.TFAgent):
             # n-step parameter.
             self._as_transition = data_converter.AsNStepTransition(
                 self.data_context, gamma=gamma, n=1)
-
-        self.episode_step_counter = train_step_counter
 
     def _check_action_spec(self, action_spec):
         flat_action_spec = tf.nest.flatten(action_spec)
@@ -271,7 +268,7 @@ class TrialAgent(tf_agent.TFAgent):
     def _setup_policy(self, time_step_spec, action_spec,
                       boltzmann_temperature, emit_log_probability):
 
-        policy = TrialPolicy(
+        policy = q_policy.QPolicy(  # TrialPolicy
             time_step_spec,
             action_spec,
             q_network=self._network,
@@ -287,7 +284,7 @@ class TrialAgent(tf_agent.TFAgent):
                 policy, epsilon=self._epsilon_greedy)
             policy = greedy_policy.GreedyPolicy(policy)
         
-        target_policy = TrialPolicy(
+        target_policy = q_policy.QPolicy(
             time_step_spec,
             action_spec,
             q_network=self._target_network,
@@ -302,7 +299,6 @@ class TrialAgent(tf_agent.TFAgent):
 
         network_observation = next_time_steps.observation
         network_reward = next_time_steps.reward
-
         if self._observation_and_action_constraint_splitter is not None:
             network_observation, _ = self._observation_and_action_constraint_splitter(
                 network_observation)
@@ -345,9 +341,6 @@ class TrialAgent(tf_agent.TFAgent):
         action_spec = cast(tensor_spec.BoundedTensorSpec, self._action_spec)
         multi_dim_actions = len(action_spec.shape) > 0
         
-        tf.summary.scalar('Rewards/network_reward', network_reward[0],
-                          self.episode_step_counter)
-
         return common.index_with_actions(
             q_values,
             tf.cast(actions, tf.int32),
@@ -380,9 +373,8 @@ class TrialAgent(tf_agent.TFAgent):
             return common.Periodically(update, period, 'periodic_update_targets')
 
     # Use @common.function in graph mode or for speeding up.
-    @common.function
+    @tf.function(autograph=True)
     def _train(self, experience, weights):
-        print(self.train_step_counter, self.train_step_counter)
         with tf.GradientTape() as tape:
             loss_info = self._loss(
                 experience,
@@ -410,11 +402,11 @@ class TrialAgent(tf_agent.TFAgent):
                                                 self.train_step_counter)
             eager_utils.add_gradients_summaries(grads_and_vars,
                                                 self.train_step_counter)
-            self._optimizer.apply_gradients(grads_and_vars)
-            self.train_step_counter.assign_add(1)
-
-        self.episode_step_counter.assign_add(1)
+        self._optimizer.apply_gradients(grads_and_vars)
+        self.train_step_counter.assign_add(1)
         
+        self._update_target()
+
         return loss_info
 
     def _loss(self,
@@ -447,7 +439,7 @@ class TrialAgent(tf_agent.TFAgent):
             _, _, next_time_steps = (
                 trajectory.experience_to_transitions(
                     last_two_steps, squeeze_time_dim))
-        # print(time_steps, actions)
+        
         with tf.name_scope('loss'):
             q_values = self._compute_q_values(
                 time_steps, actions, training=training)

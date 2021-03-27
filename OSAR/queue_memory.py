@@ -124,7 +124,7 @@ class QueueMemory(tf.keras.layers.Layer):
         prepped_value = tf.expand_dims(value, axis=1)
         return tf.concat([gathered_indices_left, prepped_value, gathered_indices_right], axis=1)
 
-    # @tf.function
+    # @tf.function(autograph=True)
     def call(self, inputs, frozen=False, **kwargs):
         states, maximum_route = inputs[0][:, -1, :], inputs[1]
         batch_size = K.cast(K.shape(inputs[0])[0], 'int32')

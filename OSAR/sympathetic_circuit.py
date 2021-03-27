@@ -133,7 +133,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         feature_dim = tf.cast(input_shape[-1], tf.int32)
         return (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, feature_dim)
 
-    #@tf.function
+    # @tf.function(autograph=True)
     def call(self, inputs, frozen=False):
         batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
         timesteps_dim = tf.cast(tf.shape(inputs)[1], tf.int32)

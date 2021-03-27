@@ -209,7 +209,7 @@ class OSARNetwork(q_network.QNetwork):
         )
         self.frozen = frozen
 
-    # @tf.function
+    # @tf.function(autograph=True)
     def call(self,
              observation,
              reward=tf.constant([0.0], dtype=tf.float32),

@@ -153,15 +153,15 @@ class ContextGenerator(tf.keras.layers.Layer):
 
         self.built = True
     
-    #@tf.function
+    # @tf.function(autograph=True)
     def call(self, inputs, **kwargs):
         batch_dim = tf.shape(inputs)[0]
         timesteps_dim = tf.shape(inputs)[1]
         fatures_dim = tf.shape(inputs)[-1]
         
         context_mem = self.memory(inputs)
-        context_mem = context_mem - tf.reduce_min(context_mem, axis=1, keepdims=True) / (tf.reduce_max(
-            context_mem, axis=1, keepdims=True) - tf.reduce_min(context_mem, axis=1, keepdims=True))
+        # context_mem = context_mem - tf.reduce_min(context_mem, axis=1, keepdims=True) / (tf.reduce_max(
+        #     context_mem, axis=1, keepdims=True) - tf.reduce_min(context_mem, axis=1, keepdims=True))
         
         att_mem, probabilities = self.attention(context_mem)
         

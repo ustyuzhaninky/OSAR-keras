@@ -112,12 +112,12 @@ class EventSpace(tf.keras.layers.Layer):
         output_dim = tf.cast(input_shape[-1], tf.int32)
         s_shape = seq_dim * self.shape[0] * self.shape[-1]
         
-        self.caps = Capsule(
-            self.units,
-            self.units,
-        )
-        self.caps.build((batch_dim, seq_dim, output_dim))
-        self.caps.built = True
+        # self.caps = Capsule(
+        #     self.units,
+        #     self.units,
+        # )
+        # self.caps.build((batch_dim, seq_dim, output_dim))
+        # self.caps.built = True
 
         self.space = self.add_weight(
             shape=(batch_dim, seq_dim*seq_dim, output_dim*output_dim),
@@ -133,7 +133,7 @@ class EventSpace(tf.keras.layers.Layer):
             activation='relu'
             )
         self.encoder.build(
-            (batch_dim, self.units, self.units))
+            (batch_dim, seq_dim, output_dim))#(batch_dim, self.units, self.units))
         self.encoder.built = True
 
         self.bias = self.add_weight(
@@ -147,7 +147,7 @@ class EventSpace(tf.keras.layers.Layer):
                                   
         self.built = True
     
-    #@tf.function
+    # @tf.function(autograph=True)
     def call(self, inputs, frozen=False, training=False, **kwargs):
         batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
         seq_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
@@ -161,8 +161,8 @@ class EventSpace(tf.keras.layers.Layer):
                             tf.reshape(self.space, (batch_dim, seq_dim, seq_dim, output_dim, output_dim)))
         cross_levels = tf.raw_ops.LeakyRelu(features=cross_levels)
         
-        filters = self.caps(cross_levels)
-        outputs = self.encoder(filters)
+        # filters = self.caps(cross_levels)
+        outputs = self.encoder(cross_levels)
         
         if not frozen:
             ideal_rewards = K.reshape(

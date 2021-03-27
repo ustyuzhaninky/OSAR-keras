@@ -35,8 +35,8 @@ from .tfxl import AdaptiveEmbedding, AdaptiveSoftmax, PositionalEmbedding, \
 from . import HelixMemory
 from . import GraphAttention
 
-__all__ = ['LinearGate', 'AttentionGate', 'TransferGate',
-           'SequenceEncoder1D', 'FiniteDifference', 'Transformer']
+__all__ = ['AttentionGate', 'TransferGate',
+           'SequenceEncoder1D', 'Transformer']
 
 
 class TransferGate(tf.keras.layers.Dense):
@@ -153,56 +153,6 @@ class TransferGate(tf.keras.layers.Dense):
         config.update({
             'noise_chanel_generator':
                 tf.keras.initializers.serialize(self.noise_chanel_generator),
-        })
-        return config
-
-
-class FiniteDifference(tf.keras.layers.Layer):
-    """Calculates finite difference across given axis.
-    """
-
-    def __init__(self,
-                 order,
-                 **kwargs):
-        super(FiniteDifference, self).__init__(**kwargs)
-
-        self.order = int(order) if not isinstance(
-            order, int) else order
-        self.supports_masking = True
-
-    def build(self, input_shape):
-        dtype = dtypes.as_dtype(self.dtype or K.floatx())
-        if not (dtype.is_floating or dtype.is_complex):
-            raise TypeError('Unable to build `FiniteDifference` layer with non-floating point '
-                            'dtype %s' % (dtype,))
-        input_shape = tensor_shape.TensorShape(input_shape)
-
-        self.input_memory = self.add_weight(
-            shape=(self.order,)+input_shape[1:],
-            initializer=tf.keras.initializers.get('zeros'),
-            trainable=False,
-            name=f'{self.name}-input-memory'
-        )
-
-    def call(self, inputs, **kwargs):
-
-        batch_size = inputs.shape[0]
-
-        mem = tf.tile(
-            tf.expand_dims(self.input_memory, axis=0),
-            [batch_size, ]+[1 for i in range(tf.rank(self.input_memory))])
-        inputs_reshaped = tf.tile(
-            K.expand_dims(inputs, axis=1),
-            [1, self.order, ]+[1 for i in range(tf.rank(inputs-1))]
-        )
-        diff = inputs_reshaped - mem
-
-        return K.sum(diff, axis=1) / (2*self.order)
-
-    def get_config(self):
-        config = super(FiniteDifference, self).get_config()
-        config.update({
-            'order': self.order,
         })
         return config
 
@@ -438,7 +388,7 @@ class AttentionGate(tf.keras.layers.Layer):
 
         super(AttentionGate, self).build(input_shape)
     
-    #@tf.function
+    # @tf.function(autograph=True)
     def call(self, inputs, **kwargs):
         
         batch_size = inputs.shape[0]

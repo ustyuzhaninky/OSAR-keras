@@ -193,7 +193,8 @@ class Experiment:
         table = reverb.Table(
             table_name,
             max_size=self._replay_buffer_max_length,
-            sampler=reverb.selectors.Prioritized(priority_exponent=0.8),
+            sampler=reverb.selectors.Uniform(),
+            # sampler=reverb.selectors.Prioritized(priority_exponent=0.8),
             remover=reverb.selectors.Fifo(),
             rate_limiter=reverb.rate_limiters.MinSize(1))
 
@@ -261,11 +262,11 @@ class Experiment:
 
         # Triggers to save the agent's policy checkpoints.
         learning_triggers = [
-            triggers.PolicySavedModelTrigger(
-                cache_dir,
-                self._agent,
-                train_step_counter,
-                interval=policy_save_interval),
+            # triggers.PolicySavedModelTrigger(
+            #     cache_dir,
+            #     self._agent,
+            #     train_step_counter,
+            #     interval=policy_save_interval),
             triggers.StepPerSecondLogTrigger(
                 train_step_counter, interval=self._eval_interval),
         ]
@@ -285,11 +286,11 @@ class Experiment:
         for metric in self._eval_actor.metrics:
             results[metric.name] = metric.result()
         return results
-
+    
     def __call__(self, progress: bool = True):
         with self._agent_learner.train_summary_writer.as_default():
             returns = self.call(progress)
-            self._agent_learner.train_summary_writer.flush()
+            # self._agent_learner.train_summary_writer.flush()
         return returns
 
     def call(self, progress: bool=True):
@@ -322,8 +323,8 @@ class Experiment:
                         t.set_postfix(
                             train_loss=loss_info.loss.numpy(), avg_return=avg_return)
                         returns.append(metrics["AverageReturn"])
-                        tf.summary.scalar('Rewards/AverageReturn', avg_return,
-                                          self.episode_step_counter)
+                        # tf.summary.scalar('Rewards/AverageReturn', avg_return,
+                        #                   self.episode_step_counter)
         else:
             for i in range(self._num_iterations):
                 # Training.
@@ -339,8 +340,8 @@ class Experiment:
                     metrics = self.get_eval_metrics()
                     avg_return = metrics["AverageReturn"]
                     returns.append(metrics["AverageReturn"])
-                    tf.summary.scalar('Rewards/AverageReturn', avg_return,
-                                      self.episode_step_counter)
+                    # tf.summary.scalar('Rewards/AverageReturn', avg_return,
+                    #                   self.episode_step_counter)
 
         self._rb_observer.close()
         self._reverb_server.stop()
