@@ -134,7 +134,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         return (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, feature_dim)
 
     # @tf.function(autograph=True)
-    def call(self, inputs, frozen=False):
+    def call(self, inputs, frozen=False, target_only=False):
         batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
         timesteps_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
         feature_dim = tf.cast(tf.shape(inputs)[-1], tf.int32)
@@ -145,20 +145,22 @@ class SympatheticCircuit(tf.keras.layers.Layer):
                                   timesteps_dim, feature_dim, feature_dim))
         space = K.max(K.max(space, axis=1), axis=2)
         target, importance = self.queue([output, space], frozen=frozen)
-        importance = tf.tile(
-            importance, (batch_dim, timesteps_dim, 1))
-
+        
         # flat_space = tf.keras.layers.Flatten()(space)
         # target, importance = self.queue([last_step, flat_space])
-        target = tf.expand_dims(space[:, -1, :], axis=1) / 2 + target / 2
-
-        distance = 0.5 - K.hard_sigmoid(tf.norm(
-            inputs - tf.tile(target, (batch_dim, timesteps_dim, 1)),
-            axis=-1,
-            ord='euclidean',
-            keepdims=True)) 
+        target = tf.expand_dims(output[:, -1, :], axis=1) / 2 + target / 2
         
-        return distance, importance, output
+        if target_only:
+            return  target, output
+        else:
+            importance = tf.tile(
+                importance, (batch_dim, timesteps_dim, 1))
+            distance = 0.5 - K.hard_sigmoid(tf.norm(
+                inputs - tf.tile(target, (batch_dim, timesteps_dim, 1)),
+                axis=-1,
+                ord='euclidean',
+                keepdims=True))
+            return distance, importance, output
 
     def get_config(self):
         config = {

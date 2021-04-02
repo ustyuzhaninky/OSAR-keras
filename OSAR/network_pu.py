@@ -47,7 +47,7 @@ from . import ContextGenerator
 from . import Memory
 from . import SympatheticCircuit
 
-__all__ = ['OSARNetwork']
+__all__ = ['PuDiscriminator', 'PuStateSotringActor']
 
 """Sample Keras Network with OSAR, based on Q-network:
     https://github.com/tensorflow/agents/blob/v0.7.1/tf_agents/networks/q_network.py#L43-L149 
@@ -76,8 +76,8 @@ def validate_specs(action_spec, observation_spec):
         'Network only supports action_specs with shape in [(), (1,)])')
 
 @gin.configurable
-class OSARNetwork(q_network.QNetwork):
-    """OSAR network."""
+class PuDiscriminator(q_network.QNetwork):
+    """Positive-Unlabeller Reward-learning Discriminator network."""
 
     """Recurrent value network. Reduces to 1 value output per batch item."""
 
@@ -98,8 +98,8 @@ class OSARNetwork(q_network.QNetwork):
                 output_fc_layer_params=(10, 10),
                 conv_type='2d',
                 dtype=tf.float32,
-                 name='OSARNetwork'):
-        """Creates an instance of `OSARNetwork`.
+                 name='PuDiscriminator'):
+        """Creates an instance of `PuDiscriminator`.
         The logits output by __call__ will ultimately have a shape of
         `[batch_size, num_actions]`, where `num_actions` is computed as
         `action_spec.maximum - action_spec.minimum + 1`. Each value is a logit for
@@ -128,7 +128,7 @@ class OSARNetwork(q_network.QNetwork):
         activation_fn: Activation function, e.g. tf.nn.relu or tf.nn.leaky_relu.
         name: A string representing the name of the network.
         Raises:
-        TypeError: `action_spec` is not a `BoundedTensorSpec`.
+            TypeError: `action_spec` is not a `BoundedTensorSpec`.
         """
         del input_dropout_layer_params
 
@@ -173,15 +173,6 @@ class OSARNetwork(q_network.QNetwork):
                                    name='gru'
                                    )
 
-        circuit = SympatheticCircuit(
-            fc_layer_params[0],
-            (input_fc_layer_params[-1], 1, num_actions),
-            memory_len,
-            kernel_regularizer='l2',
-            dropout=0.2,
-            bias_regularizer='l2',
-        )
-
         units = num_actions
         q_value_layer = tf.keras.layers.Dense(
             units,
@@ -191,14 +182,13 @@ class OSARNetwork(q_network.QNetwork):
             bias_initializer=tf.constant_initializer(-0.2),
             dtype=dtype)
 
-        super(OSARNetwork, self).__init__(
+        super(PuDiscriminator, self).__init__(
             input_tensor_spec=input_tensor_spec,
             action_spec=action_spec,
             name=name)
         
         self._encoder = input_encoder
         self._context_generator = generator
-        self._circuit = circuit
         self._repeater = gru
         self._q_value_layer = q_value_layer
         self._action_memory = self.add_weight(
@@ -231,19 +221,151 @@ class OSARNetwork(q_network.QNetwork):
              action_memory,
              reward], axis=-1)
         context = self._context_generator(context, training=training)
-        distance, importance, context_updated = self._circuit(context, training=training, frozen=self.frozen)
-        context = K.concatenate([distance, importance, context_updated], axis=-1)
         
         action = self._repeater(context)
 
         q_value = self._q_value_layer(action, training=training)
         
-        new_memory = q_value
+        if len(q_value.shape) != 3:
+            q_value = tf.expand_dims(q_value, axis=0)
         self.add_update(K.update(self._action_memory,
-                                 K.expand_dims(new_memory, axis=0)))
+                                 q_value))
+
+        return q_value[0], network_state
+
+
+@gin.configurable
+class PuStateSotringActor(q_network.QNetwork):
+    """Positive-Unlabeller Reward-learning State-Sorting Actor network."""
+
+    """Recurrent value network. Reduces to 1 value output per batch item."""
+
+    def __init__(self,
+                 input_tensor_spec,
+                 action_spec,
+                 batch_size,
+                 memory_len=10,
+                 frozen=False,
+                 n_turns=3,
+                 preprocessing_layers=None,
+                 preprocessing_combiner=None,
+                 conv_layer_params=None,
+                 activation_fn=tf.nn.relu,
+                 input_fc_layer_params=(10, 10),
+                 input_dropout_layer_params=None,
+                 fc_layer_params=(10,),
+                 output_fc_layer_params=(10, 10),
+                 conv_type='2d',
+                 dtype=tf.float32,
+                 name='PuStateSotringActor'):
+        """Creates an instance of `PuStateSotringActor`.
+        The logits output by __call__ will ultimately have a shape of
+        `[batch_size, num_actions]`, where `num_actions` is computed as
+        `action_spec.maximum - action_spec.minimum + 1`. Each value is a logit for
+        a particular action at a particular atom (see above).
+        As an example, if
+        `action_spec = tensor_spec.BoundedTensorSpec([1], tf.int32, 0, 4)`.
+        Args:
+        input_tensor_spec: A `tensor_spec.TensorSpec` specifying the observation
+            spec.
+        action_spec: A `tensor_spec.BoundedTensorSpec` representing the actions.
+        frozen: Whether the network auto-tuning should be disabled (for target network).
+        preprocessing_layers: (Optional.) A nest of `tf.keras.layers.Layer`
+            representing preprocessing for the different observations.
+            All of these layers must not be already built. For more details see
+            the documentation of `networks.EncodingNetwork`.
+        preprocessing_combiner: (Optional.) A keras layer that takes a flat list
+            of tensors and combines them. Good options include
+            `tf.keras.layers.Add` and `tf.keras.layers.Concatenate(axis=-1)`.
+            This layer must not be already built. For more details see
+            the documentation of `networks.EncodingNetwork`.
+        conv_layer_params: Optional list of convolution layer parameters for
+            observations, where each item is a length-three tuple indicating
+            (num_units, kernel_size, stride).
+        fc_layer_params: Optional list of fully connected parameters for
+            observations, where each item is the number of units in the layer.
+        activation_fn: Activation function, e.g. tf.nn.relu or tf.nn.leaky_relu.
+        name: A string representing the name of the network.
+        Raises:
+            TypeError: `action_spec` is not a `BoundedTensorSpec`.
+        """
+        del input_dropout_layer_params
+
+        validate_specs(action_spec, input_tensor_spec)
+        action_spec = tf.nest.flatten(action_spec)[0]
+        num_actions = action_spec.maximum - action_spec.minimum + 1
+        encoder_input_tensor_spec = input_tensor_spec
+
+        kernel_initializer = tf.compat.v1.variance_scaling_initializer(
+            scale=2.0, mode='fan_in', distribution='truncated_normal')
+
+        input_encoder = encoding_network.EncodingNetwork(
+            encoder_input_tensor_spec,
+            preprocessing_layers=preprocessing_layers,
+            preprocessing_combiner=preprocessing_combiner,
+            conv_layer_params=conv_layer_params,
+            fc_layer_params=input_fc_layer_params,
+            activation_fn=activation_fn,
+            kernel_initializer=kernel_initializer,
+            conv_type=conv_type,
+            dtype=dtype)
+
+        circuit = SympatheticCircuit(
+            fc_layer_params[0],
+            (input_fc_layer_params[-1], 1, num_actions),
+            memory_len,
+            kernel_regularizer='l2',
+            dropout=0.2,
+            bias_regularizer='l2',
+        )
+
+        super(PuStateSotringActor, self).__init__(
+            input_tensor_spec=input_tensor_spec,
+            action_spec=action_spec,
+            # preprocessing_combiner=tf.keras.layers.Concatenate(axis=-1),
+            name=name)
+
+        self.encoder = input_encoder
+        self._circuit = circuit
+        self._action_memory = self.add_weight(
+            shape=(batch_size, 1, num_actions),
+            initializer=tf.keras.initializers.get('glorot_uniform'),
+            trainable=False,
+            name='action-memory'
+        )
+
+    # @tf.function(autograph=True)
+    def call(self,
+             observation,
+             reward=tf.constant([0], dtype=tf.float32),
+             step_type=None,
+             network_state=(),
+             training=False):
         
-        logits = q_value
+        batch_dim = tf.shape(observation)[0]
+        
 
-        return logits, network_state
+        state, network_state = self.encoder(
+            observation, step_type=step_type, network_state=network_state,
+            training=training)
+        
+        feature_dim = tf.shape(state)[-1]
+        
+        state = tf.expand_dims(state, axis=0)
+        reward = tf.expand_dims(tf.expand_dims(reward, axis=-1), axis=-1)
+        new_event = K.concatenate(
+            [state,
+             self._action_memory,
+             reward], axis=-1)
+        
+        maximum_event, event_sequence_updated = self._circuit(
+            new_event, training=training, target_only=True)
+        
+        new_action = maximum_event[..., feature_dim:-1]
+        if len(new_action.shape) != 3:
+            new_action = tf.expand_dims(new_action, axis=0)
+        self.add_update(K.update(self._action_memory,
+                                 new_action))
 
+        return new_action[0], network_state
 

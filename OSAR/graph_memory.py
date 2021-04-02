@@ -136,14 +136,14 @@ class EventSpace(tf.keras.layers.Layer):
             (batch_dim, seq_dim, output_dim))#(batch_dim, self.units, self.units))
         self.encoder.built = True
 
-        self.bias = self.add_weight(
-            name=f'{self.name}-bias',
-            initializer=self.bias_initializer,
-            regularizer=self.bias_regularizer,
-            shape=(batch_dim, 1,),
-            dtype=tf.float32,
-            trainable=True,
-        )
+        # self.bias = self.add_weight(
+        #     name=f'{self.name}-bias',
+        #     initializer=self.bias_initializer,
+        #     regularizer=self.bias_regularizer,
+        #     shape=(batch_dim, 1,),
+        #     dtype=tf.float32,
+        #     trainable=True,
+        # )
                                   
         self.built = True
     
@@ -169,7 +169,7 @@ class EventSpace(tf.keras.layers.Layer):
                 self.space, (batch_dim, seq_dim, seq_dim, output_dim, output_dim))
             ideal_rewards = ideal_rewards[..., -1, -1]
             reward_diff = K.tanh(K.max(K.max(K.abs(
-                ideal_rewards[..., 0, 0] - rewards), axis=1), axis=1) - self.bias)
+                ideal_rewards[..., 0, 0] - rewards), axis=1), axis=1))# - self.bias)
             updated_space = KroneckerMixture()([outputs, inputs]) 
             updated_space = self.space + reward_diff * updated_space
         

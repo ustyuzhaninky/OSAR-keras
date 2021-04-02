@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 __name__ = 'OSAR'
-__version__ = "0.1.10"
+__version__ = "0.1.11"
 
 from OSAR.helix_memory import *
 from OSAR.graph_attention import *
@@ -25,7 +25,9 @@ from OSAR.queue_memory import *
 from OSAR.graph_memory import *
 from OSAR.sympathetic_circuit import *
 from OSAR.network import *
-from OSAR.trial_policy import TrialPolicy
-from OSAR.agent import TrialAgent
+from OSAR.network_sac import *
+from OSAR.network_pu import *
+from OSAR.trial_policy import *
+from OSAR.agent import *
 from OSAR.runner import *
 

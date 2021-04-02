@@ -40,6 +40,7 @@ import tensorflow as tf
 
 from tf_agents.environments import suite_pybullet
 from tf_agents.environments.wrappers import PyEnvironmentBaseWrapper
+from tf_agents.environments.wrappers import ActionDiscretizeWrapper
 from tf_agents import agents
 from tf_agents.agents.dqn import dqn_agent
 from tf_agents.drivers import dynamic_step_driver
@@ -73,6 +74,8 @@ from tf_agents.drivers import py_driver
 from tf_agents.environments import py_environment
 from tf_agents.environments import tf_environment
 from tf_agents.trajectories import time_step as ts
+from tf_agents.networks import actor_distribution_network
+from tf_agents.policies import actor_policy
 
 from . import OSARNetwork
 
@@ -145,12 +148,15 @@ class Experiment:
             env_name)  # suite_gym.load(env_name)
         eval_py_env = suite_pybullet.load(
             env_name)  # suite_gym.load(env_name)
-        self._train_env = RewardClipWrapper(train_py_env)
-        self._eval_env = RewardClipWrapper(eval_py_env)
+        # num_actions = train_py_env.action_spec().shape[0]
+        num_actions = train_py_env.action_spec().maximum - train_py_env.action_spec().minimum + 1
+        self._train_env = train_py_env
+        self._eval_env = eval_py_env
+        # self._train_env = ActionDiscretizeWrapper(train_py_env, num_actions - 1)
+        # self._eval_env = ActionDiscretizeWrapper(eval_py_env, num_actions - 1)
         # TODO: Implement gym support when Actor supports `TFPyEnvironment`s
         # self._train_env = tf_py_environment.TFPyEnvironment(train_py_env)
         # self._eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
-        
         # Setting up the agent
         # self._train_env.observation_spec()
         agent_specs['n_step_update'] = n_step_update
@@ -159,7 +165,6 @@ class Experiment:
         agent_specs['action_spec'] =  tensor_spec.from_spec(self._train_env.action_spec())
         # self._train_env.time_step_spec()
         agent_specs['time_step_spec'] = tensor_spec.from_spec(self._train_env.time_step_spec())
-
         # Registering olicies
         train_step_counter = train_utils.create_train_step()
         agent_specs['train_step_counter'] = train_step_counter
@@ -175,12 +180,18 @@ class Experiment:
             tf_collect_policy, use_tf_function=True)
 
         search_q_network = q_network.QNetwork(
+        # search_network = actor_distribution_network.ActorDistributionNetwork(
             agent_specs['observation_spec'],
-            action_spec=agent_specs['action_spec'])
+            agent_specs['action_spec'])
         search_policy = q_policy.QPolicy(
             agent_specs['time_step_spec'],
             agent_specs['action_spec'],
             q_network=search_q_network)
+        # search_policy = actor_policy.ActorPolicy(
+        #     agent_specs['time_step_spec'],
+        #     agent_specs['action_spec'],
+        #     actor_network=search_network,
+        # )
         self._search_policy =  boltzmann_policy.BoltzmannPolicy(
             search_policy, temperature=0.4)
         self._search_policy = py_tf_eager_policy.PyTFEagerPolicy(
@@ -362,7 +373,7 @@ class Experiment:
         dataset.to_csv(os.path.join(dataset_folder, f'{self._env_name}-steps.csv'))
 
     
-    def evaluate(self, filename:str, max_episodes: types.Int=5, fps: types.Int=30):
+    def evaluate(self, filename:str, max_episodes: types.Int=10000, fps: types.Int=30):
         env = self._eval_env
         tf_eval_policy = self._agent.policy
         eager_eval_policy = py_tf_eager_policy.PyTFEagerPolicy(
@@ -465,7 +476,7 @@ class Runner:
                         self._logpath, 'logs', self._model_name, 'videos', f"{item.get('env_name')}-trained.gif")
                     experiment.evaluate(filename)
 
-                    experiment.save()
+                    # experiment.save()
 
                     del experiment
                     # Saving results of the game
@@ -505,7 +516,7 @@ class Runner:
                     self._logpath, 'logs', self._model_name, 'videos', f"{item.get('env_name')}-trained.gif")
                 experiment.evaluate(filename)
 
-                experiment.save()
+                # experiment.save()
 
                 del experiment
                 # Saving results of the game
