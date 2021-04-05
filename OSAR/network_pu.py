@@ -299,16 +299,16 @@ class PuStateSotringActor(q_network.QNetwork):
         kernel_initializer = tf.compat.v1.variance_scaling_initializer(
             scale=2.0, mode='fan_in', distribution='truncated_normal')
 
-        input_encoder = encoding_network.EncodingNetwork(
-            encoder_input_tensor_spec,
-            preprocessing_layers=preprocessing_layers,
-            preprocessing_combiner=preprocessing_combiner,
-            conv_layer_params=conv_layer_params,
-            fc_layer_params=input_fc_layer_params,
-            activation_fn=activation_fn,
-            kernel_initializer=kernel_initializer,
-            conv_type=conv_type,
-            dtype=dtype)
+        # input_encoder = encoding_network.EncodingNetwork(
+        #     encoder_input_tensor_spec,
+        #     preprocessing_layers=preprocessing_layers,
+        #     preprocessing_combiner=preprocessing_combiner,
+        #     conv_layer_params=conv_layer_params,
+        #     fc_layer_params=input_fc_layer_params,
+        #     activation_fn=activation_fn,
+        #     kernel_initializer=kernel_initializer,
+        #     conv_type=conv_type,
+        #     dtype=dtype)
 
         circuit = SympatheticCircuit(
             fc_layer_params[0],
@@ -325,7 +325,7 @@ class PuStateSotringActor(q_network.QNetwork):
             # preprocessing_combiner=tf.keras.layers.Concatenate(axis=-1),
             name=name)
 
-        self.encoder = input_encoder
+        # self.encoder = input_encoder
         self._circuit = circuit
         self._action_memory = self.add_weight(
             shape=(batch_size, 1, num_actions),
@@ -344,10 +344,10 @@ class PuStateSotringActor(q_network.QNetwork):
         
         batch_dim = tf.shape(observation)[0]
         
-
-        state, network_state = self.encoder(
-            observation, step_type=step_type, network_state=network_state,
-            training=training)
+        state = tf.cast(observation, tf.float32) / 255
+        # state, network_state = self.encoder(
+        #     observation, step_type=step_type, network_state=network_state,
+        #     training=training)
         
         feature_dim = tf.shape(state)[-1]
         

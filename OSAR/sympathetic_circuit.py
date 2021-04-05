@@ -121,8 +121,8 @@ class SympatheticCircuit(tf.keras.layers.Layer):
             self.memory_len,
             kernel_regularizer=self.kernel_regularizer,
             )
-        self.queue.build(
-            [(batch_dim, feature_dim), (batch_dim, timesteps_dim*feature_dim)])
+        self.queue.build((batch_dim, feature_dim))
+            #[(batch_dim, feature_dim), (batch_dim, timesteps_dim*feature_dim)])
         self.queue.built = True
 
         self.built = True
@@ -139,19 +139,20 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         timesteps_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
         feature_dim = tf.cast(tf.shape(inputs)[-1], tf.int32)
 
-        # last_step = inputs[:, -1, :]
-        output, space = self.event_space(inputs, frozen=frozen)
-        space = K.reshape(space, (batch_dim, timesteps_dim,
-                                  timesteps_dim, feature_dim, feature_dim))
-        space = K.max(K.max(space, axis=1), axis=2)
-        target, importance = self.queue([output, space], frozen=frozen)
+        last_step = inputs[:, -1, :]
+        # output, space = self.event_space(inputs, frozen=frozen)
+        # space = K.reshape(space, (batch_dim, timesteps_dim,
+        #                           timesteps_dim, feature_dim, feature_dim))
+        # space = K.max(K.max(space, axis=1), axis=2)
+        # [output, space], frozen=frozen)
+        target, importance = self.queue(last_step)
         
         # flat_space = tf.keras.layers.Flatten()(space)
         # target, importance = self.queue([last_step, flat_space])
-        target = tf.expand_dims(output[:, -1, :], axis=1) / 2 + target / 2
+        # target = tf.expand_dims(output[:, -1, :], axis=1) / 2 + target / 2
         
         if target_only:
-            return  target, output
+            return target, target  # , output
         else:
             importance = tf.tile(
                 importance, (batch_dim, timesteps_dim, 1))
@@ -160,7 +161,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
                 axis=-1,
                 ord='euclidean',
                 keepdims=True))
-            return distance, importance, output
+            return distance, importance, target  # , output
 
     def get_config(self):
         config = {
