@@ -22,12 +22,21 @@ from __future__ import print_function
 
 import tensorflow as tf
 import numpy as np
+from tensorflow.python.eager import backprop
+from tensorflow.python.eager import context
+from tensorflow.python.eager import monitoring
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import dtypes
 from tensorflow.python.ops import special_math_ops
-from tensorflow.python.keras.layers.ops import core as core_ops
+from tensorflow.python.ops import gen_math_ops
+from tensorflow.python.framework import sparse_tensor
+from tensorflow.python.ops import embedding_ops
+from tensorflow.python.ops import sparse_ops
+from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import standard_ops
+from tensorflow.python.ops import nn
+from tensorflow.python.ops import nn_ops
 from tensorflow.python.keras.engine.input_spec import InputSpec
-from tensorflow import keras
 from tensorflow.keras import backend as K
 from .tfxl import FeedForward as LinearGate
 from .tfxl import AdaptiveEmbedding, AdaptiveSoftmax, PositionalEmbedding, \
@@ -133,20 +142,59 @@ class TransferGate(tf.keras.layers.Dense):
         self.built = True
 
     def call(self, inputs):
+        if inputs.dtype.base_dtype != self._compute_dtype_object.base_dtype:
+            inputs = math_ops.cast(inputs, dtype=self._compute_dtype_object)
         noise = self.noise_chanel_generator((1,))
-        return self.activation(
-            core_ops.dense(
-                inputs,
-                self.noisy_kernel,
-                self.noisy_bias,
-                None,
-                dtype=self._compute_dtype_object) +
-            core_ops.dense(
-                inputs,
-                self.kernel * noise,
-                self.bias * noise,
-                None,
-                dtype=self._compute_dtype_object))
+
+        rank = inputs.shape.rank
+        if rank == 2 or rank is None:
+            # We use embedding_lookup_sparse as a more efficient matmul operation for
+            # large sparse input tensors. The op will result in a sparse gradient, as
+            # opposed to sparse_ops.sparse_tensor_dense_matmul which results in dense
+            # gradients. This can lead to sigfinicant speedups, see b/171762937.
+            if isinstance(inputs, sparse_tensor.SparseTensor):
+                # We need to fill empty rows, as the op assumes at least one id per row.
+                inputs, _ = sparse_ops.sparse_fill_empty_rows(inputs, 0)
+                # We need to do some munging of our input to use the embedding lookup as
+                # a matrix multiply. We split our input matrix into separate ids and
+                # weights tensors. The values of the ids tensor should be the column
+                # indices of our input matrix and the values of the weights tensor
+                # can continue to the actual matrix weights.
+                # The column arrangement of ids and weights
+                # will be summed over and does not matter. See the documentation for
+                # sparse_ops.sparse_tensor_dense_matmul a more detailed explanation
+                # of the inputs to both ops.
+                ids = sparse_tensor.SparseTensor(
+                    indices=inputs.indices,
+                    values=inputs.indices[:, 1],
+                    dense_shape=inputs.dense_shape)
+                weights = inputs
+                outputs = embedding_ops.embedding_lookup_sparse_v2(
+                    self.kernel * noise, ids, weights, combiner='sum')
+                noisy_outputs =  embedding_ops.embedding_lookup_sparse_v2(
+                    self.noisy_kernel, ids, weights, combiner='sum')
+            else:
+                outputs = gen_math_ops.MatMul(a=inputs, b=self.kernel * noise)
+                noisy_outputs = gen_math_ops.MatMul(a=inputs, b=self.noisy_kernel)
+                # Broadcast kernel to inputs.
+        else:
+            noisy_outputs = standard_ops.tensordot(inputs, self.noisy_kernel, [[rank - 1], [0]])
+            outputs = standard_ops.tensordot(inputs, self.kernel * noise, [[rank - 1], [0]])
+            # Reshape the output back to the original ndim of the input.
+            if not context.executing_eagerly():
+                shape = inputs.shape.as_list()
+                output_shape = shape[:-1] + [self.kernel.shape[-1]]
+                outputs.set_shape(output_shape)
+                noisy_outputs.set_shape(output_shape)
+
+        if self.use_bias:
+            outputs = nn_ops.bias_add(
+                noisy_outputs, self.noisy_bias) + nn_ops.bias_add(
+                    outputs, self.bias * noise)
+
+        if self.activation is not None:
+            outputs = self.activation(outputs)
+        return outputs
 
     def get_config(self):
         config = super(TransferGate, self).get_config()

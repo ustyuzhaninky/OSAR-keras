@@ -94,12 +94,12 @@ class SetupToolsHelper(object):
             'importlib-metadata',
             'gin-config >= 0.1.1',
             'atari_py>=0.2.6',
+            'dm-reverb[tensorflow]>=0.2.0',
             'tf_agents[reverb]>=0.7.1',
-            'dm-reverb >= 0.2.0',
             'tqdm>=4.59.0',
             'imageio>=2.8.2',
             'PILLOW>=7.1.2',
-            'pandas>=1.2.3',
+            'pandas',
             'pybullet>=3.1.0',
             'tensorflow >= 2.4.1',
         ]
@@ -148,7 +148,7 @@ class SetupToolsHelper(object):
             long_description_content_type='text/markdown',
             url='https://github.com/ustyuzhaninky/OSAR-keras',  # Optional
             author='Konstantin Ustyuzhanin',  # Optional
-            python_requires='>=3',
+            # python_requires='>=3',
             classifiers=[  # Optional
                 'Development Status :: 3 - Alpha',
 
@@ -197,7 +197,7 @@ if __name__ == '__main__':
         type=str,
         default=None,
         help='Overrides TF version required when OSAR is installed, e.g.'
-        'tensorflow>=2.3.0')
+        'tensorflow>=2.4.1')
     FLAGS, unparsed = parser.parse_known_args()
     # Go forward with only non-custom flags.
     sys.argv.clear()

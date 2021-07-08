@@ -25,7 +25,6 @@ import numpy as np
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import dtypes
 from tensorflow.python.ops import special_math_ops
-from tensorflow.python.keras.layers.ops import core as core_ops
 from tensorflow.python.keras.engine.input_spec import InputSpec
 from tensorflow.python.keras.utils import tf_utils
 from tensorflow import keras

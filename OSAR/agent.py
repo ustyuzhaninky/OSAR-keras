@@ -51,9 +51,9 @@ from tf_agents.specs import tensor_spec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.trajectories import trajectory
 from tf_agents.typing import types
-from tf_agents.utils import common
 from tf_agents.utils import eager_utils
 from tf_agents.utils import nest_utils
+from tf_agents.utils import common
 
 from . import TrialPolicy
 
@@ -216,7 +216,7 @@ class TrialAgent(tf_agent.TFAgent):
             debug_summaries=debug_summaries,
             summarize_grads_and_vars=summarize_grads_and_vars,
             train_step_counter=train_step_counter,
-            validate_args=False
+            # validate_args=False
         )
 
 
@@ -417,7 +417,7 @@ class TrialAgent(tf_agent.TFAgent):
               weights=None,
               training=False):
         
-        self._check_trajectory_dimensions(experience)
+        # self._check_trajectory_dimensions(experience)
 
         squeeze_time_dim = not self._network.state_spec
         if self._n_step_update == 1:

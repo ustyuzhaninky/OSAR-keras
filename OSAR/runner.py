@@ -193,8 +193,8 @@ class Experiment:
         table = reverb.Table(
             table_name,
             max_size=self._replay_buffer_max_length,
-            sampler=reverb.selectors.Uniform(),
-            # sampler=reverb.selectors.Prioritized(priority_exponent=0.8),
+            # sampler=reverb.selectors.Uniform(),
+            sampler=reverb.selectors.Prioritized(priority_exponent=0.8),
             remover=reverb.selectors.Fifo(),
             rate_limiter=reverb.rate_limiters.MinSize(1))
 
@@ -278,6 +278,7 @@ class Experiment:
             experience_dataset_fn,
             checkpoint_interval=self._eval_interval,
             summary_interval=self._eval_interval,
+            run_optimizer_variable_init=False,
             triggers=learning_triggers)
 
     def get_eval_metrics(self):

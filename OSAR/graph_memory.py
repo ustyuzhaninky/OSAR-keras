@@ -26,10 +26,23 @@ from typing import Optional, Text, cast, Iterable
 
 import tensorflow as tf
 import numpy as np
+
+from tensorflow.python.eager import backprop
+from tensorflow.python.eager import context
+from tensorflow.python.eager import monitoring
 from tensorflow.python.framework import tensor_shape
-from tensorflow.python.keras.layers.ops import core as core_ops
-from tensorflow.python.keras.engine.input_spec import InputSpec
+from tensorflow.python.framework import dtypes
 from tensorflow.python.ops import special_math_ops
+from tensorflow.python.ops import gen_math_ops
+from tensorflow.python.framework import sparse_tensor
+from tensorflow.python.ops import embedding_ops
+from tensorflow.python.ops import sparse_ops
+from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import standard_ops
+from tensorflow.python.ops import nn
+from tensorflow.python.ops import nn_ops
+from tensorflow.python.framework import tensor_shape
+from tensorflow.python.keras.engine.input_spec import InputSpec
 from tensorflow import keras
 from tensorflow.python.keras import backend as K
 from tensorflow.python.ops import nn
@@ -128,13 +141,13 @@ class EventSpace(tf.keras.layers.Layer):
             trainable=False,
         )
 
-        self.encoder = SequenceEncoder1D(
-            output_dim, seq_dim,
-            activation='relu'
-            )
-        self.encoder.build(
-            (batch_dim, seq_dim, output_dim))#(batch_dim, self.units, self.units))
-        self.encoder.built = True
+        # self.encoder = SequenceEncoder1D(
+        #     output_dim, seq_dim,
+        #     activation='relu'
+        #     )
+        # self.encoder.build(
+        #     (batch_dim, seq_dim, output_dim))#(batch_dim, self.units, self.units))
+        # self.encoder.built = True
 
         self.bias = self.add_weight(
             name=f'{self.name}-bias',
@@ -162,7 +175,8 @@ class EventSpace(tf.keras.layers.Layer):
         cross_levels = tf.raw_ops.LeakyRelu(features=cross_levels)
         
         # filters = self.caps(cross_levels)
-        outputs = self.encoder(cross_levels)
+        # outputs = self.encoder(cross_levels)
+        outputs = cross_levels
         
         if not frozen:
             ideal_rewards = K.reshape(
@@ -171,7 +185,8 @@ class EventSpace(tf.keras.layers.Layer):
             reward_diff = K.tanh(K.max(K.max(K.abs(
                 ideal_rewards[..., 0, 0] - rewards), axis=1), axis=1) - self.bias)
             updated_space = KroneckerMixture()([outputs, inputs]) 
-            updated_space = self.space + reward_diff * updated_space
+            updated_space = self.space * \
+                (1 - reward_diff) + reward_diff * updated_space
         
         if self.return_space:
             return outputs, self.space
