@@ -65,7 +65,7 @@ def compute_td_targets(next_q_values: types.Tensor,
 
 @gin.configurable
 class TrialAgent(tf_agent.TFAgent):
-    """A Trial Agent.
+    """A Trial Agent - DQN agent, adaped for work with OSAR netsorks.
     """
 
     def  __init__(
