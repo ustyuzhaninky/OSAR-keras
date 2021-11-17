@@ -23,7 +23,6 @@ from __future__ import print_function
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import initializers, layers
 from tensorflow.keras import activations
 from tensorflow.keras import backend as K
 from tensorflow.keras.layers import Layer

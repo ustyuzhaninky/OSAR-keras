@@ -23,22 +23,6 @@ from __future__ import print_function
 import tensorflow as tf
 import numpy as np
 
-from tensorflow.python.eager import backprop
-from tensorflow.python.eager import context
-from tensorflow.python.eager import monitoring
-from tensorflow.python.framework import tensor_shape
-from tensorflow.python.framework import dtypes
-from tensorflow.python.ops import special_math_ops
-from tensorflow.python.ops import gen_math_ops
-from tensorflow.python.framework import sparse_tensor
-from tensorflow.python.ops import embedding_ops
-from tensorflow.python.ops import sparse_ops
-from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import standard_ops
-from tensorflow.python.ops import nn
-from tensorflow.python.ops import nn_ops
-from tensorflow.python.keras.engine.input_spec import InputSpec
-from tensorflow import keras
 from tensorflow.python.keras import backend as K
 
 __all__ = ['QueueMemory', ]

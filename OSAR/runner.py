@@ -25,6 +25,7 @@ import base64
 import imageio
 import IPython
 import matplotlib
+import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
@@ -131,6 +132,7 @@ class Experiment:
 
         # Common parameters
         self._num_iterations = num_iterations
+        self._cache_dir = cache_dir
         self._initial_collect_steps = initial_collect_steps
         self._collect_steps_per_iteration = collect_steps_per_iteration
         self._replay_buffer_max_length = replay_buffer_max_length
@@ -145,8 +147,11 @@ class Experiment:
             env_name)  # suite_gym.load(env_name)
         eval_py_env = suite_pybullet.load(
             env_name)  # suite_gym.load(env_name)
+        
+        # TODO: Doesn't work well with clipped reward on q-learning
         self._train_env = RewardClipWrapper(train_py_env)
         self._eval_env = RewardClipWrapper(eval_py_env)
+
         # TODO: Implement gym support when Actor supports `TFPyEnvironment`s
         # self._train_env = tf_py_environment.TFPyEnvironment(train_py_env)
         # self._eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
@@ -160,7 +165,7 @@ class Experiment:
         # self._train_env.time_step_spec()
         agent_specs['time_step_spec'] = tensor_spec.from_spec(self._train_env.time_step_spec())
 
-        # Registering olicies
+        # Registering policies
         train_step_counter = train_utils.create_train_step()
         agent_specs['train_step_counter'] = train_step_counter
         self._agent = agent_generator(**agent_specs)
@@ -189,7 +194,7 @@ class Experiment:
         sequence_length = 2
 
         # # Setting up the replay buffer
-        table_name = 'uniform_table'
+        table_name = 'prioritized_table'
         table = reverb.Table(
             table_name,
             max_size=self._replay_buffer_max_length,
@@ -243,7 +248,7 @@ class Experiment:
             self._collect_policy,
             train_step_counter,
             steps_per_run=1,
-            metrics=actor.collect_metrics(self._num_eval_episodes),
+            metrics=actor.collect_metrics(self._num_iterations),
             summary_dir=cache_dir,
             observers=[
                 # uniform_observer,
@@ -259,16 +264,17 @@ class Experiment:
             summary_dir=os.path.join(cache_dir, 'eval'),
         )
 
-
         # Triggers to save the agent's policy checkpoints.
         learning_triggers = [
-            # triggers.PolicySavedModelTrigger(
-            #     cache_dir,
-            #     self._agent,
-            #     train_step_counter,
-            #     interval=policy_save_interval),
+            triggers.PolicySavedModelTrigger(
+                cache_dir,
+                self._agent,
+                train_step_counter,
+                interval=policy_save_interval),
             triggers.StepPerSecondLogTrigger(
-                train_step_counter, interval=self._eval_interval),
+                train_step_counter, interval=self._eval_interval),    # For evaluation
+            triggers.StepPerSecondLogTrigger(
+                train_step_counter, interval=1),    # For training
         ]
         
         self._agent_learner = learner.Learner(
@@ -289,9 +295,17 @@ class Experiment:
         return results
     
     def __call__(self, progress: bool = True):
-        with self._agent_learner.train_summary_writer.as_default():
+        
+        # Forcing to create a file writer.
+        logdir = os.path.join(self._cache_dir, datetime.now().strftime('%Y%m%d-%H%M%S'))
+        file_writer = tf.summary.create_file_writer(os.path.join(logdir, 'scalars', 'metrics'))
+        
+        with file_writer.set_as_default():
+        # with self._agent_learner.train_summary_writer.as_default():
             returns = self.call(progress)
+            file_writer.flush()
             # self._agent_learner.train_summary_writer.flush()
+        
         return returns
 
     def call(self, progress: bool=True):
@@ -302,10 +316,14 @@ class Experiment:
         avg_return = self.get_eval_metrics()["AverageReturn"]
         returns = [avg_return]
 
+        # Forcing to create a file writer.
+        logdir = os.path.join(self._cache_dir, datetime.now().strftime('%Y%m%d-%H%M%S'))
+        file_writer = tf.summary.create_file_writer(os.path.join(logdir, 'scalars', 'metrics'))
+
         if progress:
             with tqdm.trange(self._num_iterations) as t:
                 for _ in t:
-                    
+                        
                     # Training.
                     self._collect_actor.run()
                     loss_info = self._agent_learner.run(iterations=1)
@@ -317,17 +335,18 @@ class Experiment:
                     t.set_description(f'Episode {step}')
                     t.set_postfix(
                         train_loss=loss_info.loss.numpy(), avg_return=avg_return)
-                    
+                        
                     if step % self._eval_interval == 0:
                         metrics = self.get_eval_metrics()
                         avg_return = metrics["AverageReturn"]
                         t.set_postfix(
                             train_loss=loss_info.loss.numpy(), avg_return=avg_return)
                         returns.append(metrics["AverageReturn"])
-                        # tf.summary.scalar('Rewards/AverageReturn', avg_return,
-                        #                   self.episode_step_counter)
+                    tf.summary.scalar('reward/AverageReturn',
+                                      metrics["AverageReturn"],
+                                      step)
         else:
-            for i in range(self._num_iterations):
+            for _ in range(self._num_iterations):
                 # Training.
                 self._collect_actor.run()
                 loss_info = self._agent_learner.run(iterations=1)
@@ -336,13 +355,14 @@ class Experiment:
                 step = self._agent_learner.train_step_numpy
 
                 step = self._agent.train_step_counter.numpy()
-                    
+                        
                 if step % self._eval_interval == 0:
                     metrics = self.get_eval_metrics()
                     avg_return = metrics["AverageReturn"]
                     returns.append(metrics["AverageReturn"])
-                    # tf.summary.scalar('Rewards/AverageReturn', avg_return,
-                    #                   self.episode_step_counter)
+                tf.summary.scalar('reward/AverageReturn',
+                                  metrics["AverageReturn"],
+                                  step)
 
         self._rb_observer.close()
         self._reverb_server.stop()

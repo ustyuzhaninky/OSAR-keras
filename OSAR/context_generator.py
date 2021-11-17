@@ -22,12 +22,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 import numpy as np
-from tensorflow.python.framework import tensor_shape
-from tensorflow.python.framework import dtypes
-from tensorflow.python.ops import special_math_ops
-from tensorflow.python.keras.engine.input_spec import InputSpec
 from tensorflow.python.keras.utils import tf_utils
-from tensorflow import keras
 from tensorflow.keras import backend as K
 from .helix_memory import HelixMemory
 from .gates import AttentionGate

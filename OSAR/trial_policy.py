@@ -29,15 +29,10 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 
 from tf_agents.distributions import shifted_categorical
-from tf_agents.policies import boltzmann_policy
-from tf_agents.policies import epsilon_greedy_policy
-from tf_agents.policies import greedy_policy
 from tf_agents.policies import q_policy
-from tf_agents.specs import tensor_spec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.typing import types
 from tf_agents.networks import network
-from tf_agents.networks import utils as network_utils
 from tf_agents.trajectories import policy_step
 from tf_agents.trajectories import time_step as ts
 

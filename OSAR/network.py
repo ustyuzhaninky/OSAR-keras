@@ -23,39 +23,10 @@ from __future__ import print_function
 import tensorflow as tf
 import numpy as np
 
-from tensorflow.python.eager import backprop
-from tensorflow.python.eager import context
-from tensorflow.python.eager import monitoring
-from tensorflow.python.framework import tensor_shape
-from tensorflow.python.framework import dtypes
-from tensorflow.python.ops import special_math_ops
-from tensorflow.python.ops import gen_math_ops
-from tensorflow.python.framework import sparse_tensor
-from tensorflow.python.ops import embedding_ops
-from tensorflow.python.ops import sparse_ops
-from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import standard_ops
-from tensorflow.python.ops import nn
-from tensorflow.python.ops import nn_ops
-from tensorflow.python.keras.engine.input_spec import InputSpec
-from tensorflow.python.keras.utils import tf_utils
-from tensorflow import keras
 from tensorflow.keras import backend as K
-from .helix_memory import HelixMemory
-from .gates import AttentionGate
 import gin
 
-from tf_agents.keras_layers import dynamic_unroll_layer
-from tf_agents.networks import encoding_network, lstm_encoding_network
-from tf_agents.networks import q_network
-from tf_agents.specs import tensor_spec
-from tf_agents.trajectories import time_step
-from tf_agents.utils import nest_utils
-from tf_agents.networks import categorical_q_network
-from tf_agents.networks import utils as network_utils
-
 from . import ContextGenerator
-from . import Memory
 from . import SympatheticCircuit
 
 __all__ = ['OSARNetwork']
