@@ -34,7 +34,6 @@ class HelixMemory(tf.keras.layers.Layer):
     """Helix memory unit.
 
     # Arguments
-        batch_size: int > 0. Maximum batch size.
         memory_len: int > 0. Maximum memory length.
         n_turns: int >= `compression_rate`+1. Number of helix turns.
         compression_rate: int > 0. Rate of compression for old memories.
@@ -59,7 +58,6 @@ class HelixMemory(tf.keras.layers.Layer):
 
     def __init__(
         self,
-        batch_size,
         memory_len,
         n_turns,
         compression_rate=2,
@@ -69,7 +67,6 @@ class HelixMemory(tf.keras.layers.Layer):
         constraint=None,
         **kwargs):
 
-        kwargs['batch_size'] = batch_size
         super(HelixMemory, self).__init__(
             **kwargs
             )
@@ -81,8 +78,6 @@ class HelixMemory(tf.keras.layers.Layer):
         
         self.supports_masking = True
         self.stateful = True
-
-        self.batch_size = batch_size
         self.memory_len = memory_len
         self.n_turns = n_turns + 1
         self.compression_rate = compression_rate
@@ -101,7 +96,7 @@ class HelixMemory(tf.keras.layers.Layer):
         n_conv = sum(pow(self.compression_rate, i)
                      for i in range(1, self.n_turns))
         self.memory = self.add_weight(
-            shape=(self.batch_size, self.memory_len +
+            shape=(self.memory_len +
                    n_conv, output_dim),
             initializer='glorot_uniform',
             trainable=False,
@@ -124,7 +119,7 @@ class HelixMemory(tf.keras.layers.Layer):
         super(HelixMemory, self).build(input_shape)
     
     def compute_output_shape(self, input_shape):
-        return self.memory.shape
+        return input_shape[0], self.memory.shape[0], self.memory.shape[1]
 
     def compute_mask(self, inputs, mask=None):
         if mask is None:
@@ -154,65 +149,70 @@ class HelixMemory(tf.keras.layers.Layer):
         return compressed
     
     def _helix(self, inputs):
+        
         output_dim = inputs.shape[-1]
         n_long_mem = sum(pow(self.compression_rate, i)
                          for i in range(1, self.n_turns + 1 - self.k))
         turn_lenght = pow(self.compression_rate, self.n_turns - self.k)
-        add_lenght = inputs.shape[1] - n_long_mem 
+        add_lenght = inputs.shape[0] - n_long_mem 
         # turn_start = inputs.shape[1] - turn_lenght - add_lenght
         
         # Turn extraction, compression, slice and build
-        helix_k_turn_old = inputs[:, -turn_lenght-add_lenght:-add_lenght, :]
+        helix_k_turn_old = inputs[-turn_lenght-add_lenght:-add_lenght, :]
 
-        compression = self._compress(helix_k_turn_old)
+        compression = self._compress(tf.expand_dims(helix_k_turn_old, axis=0))[0]
         compression_lenght = compression.shape[1]
         
-        other_helix = inputs[:, :-turn_lenght-add_lenght, :]
+        other_helix = inputs[:-turn_lenght-add_lenght, :]
         new_other_helix = K.concatenate(
             [other_helix, compression],
-            axis=1,
+            axis=0,
         )
 
-        helix_k_turn_prep = inputs[:, -turn_lenght:, :]
+        helix_k_turn_prep = inputs[-turn_lenght:, :]
 
         return new_other_helix, helix_k_turn_prep
 
     def call(self, inputs, **kwargs):
         self.k = 0
-        if len(inputs.shape) < 3:
-            raise ValueError(
-                'The dimension of the input vector'
-                ' should be at least 3D: `(batch_size, timesteps, features)`')
+        # if len(inputs.shape) < 3:
+        #     raise ValueError(
+        #         'The dimension of the input vector'
+        #         ' should be at least 3D: `(batch_size, timesteps, features)`')
 
         if tensor_shape.dimension_value(inputs.shape[-1]) is None:
             raise ValueError('The last dimension of the first tensor of the inputs'
                             'should be defined. Found `None`.')
         
-        batch_size = inputs.shape[0]
-        output_dim = inputs.shape[2]
-        seq_len = inputs.shape[1]
+        # batch_size = inputs.shape[0]
+        # output_dim = inputs.shape[2]
+        # long_mem_end = sum(pow(self.compression_rate, i) for i in range(1, self.n_turns))
+        # short_mem_start = pow(self.compression_rate, self.n_turns)
 
-        long_mem_end = sum(pow(self.compression_rate, i) for i in range(1, self.n_turns))
-        short_mem_start = pow(self.compression_rate, self.n_turns)
-        # Build new memory
+        return tf.map_fn(self._memory_pass, inputs)
         
+    def _memory_pass(self, inputs):
+        seq_len = inputs.shape[0]
+
+        # Build new memory
         new_memory = K.concatenate(
-            [self.memory, inputs], axis=1)
+            [self.memory, inputs], axis=0)
         
         # Separating short and long-term memories
 
-        short_memory = new_memory[:, -self.memory_len:, :]
-        long_memory = new_memory[:, :-self.memory_len, :]
+        short_memory = new_memory[-self.memory_len:, :]
+        long_memory = new_memory[:-self.memory_len, :]
         # Shrinking fallout part for the zero turn of the helix
-        long_memory = long_memory[:, :-seq_len, :]
-        fallout = short_memory[:, -seq_len:, :]
-        sh_fallout = self._compress(fallout)
-        
+        long_memory = long_memory[:-seq_len, :]
+        fallout = short_memory[-seq_len:, :]
+        sh_fallout = self._compress(tf.expand_dims(fallout, axis=0))
+        sh_fallout = K.reshape(sh_fallout, (sh_fallout.shape[0]*sh_fallout.shape[1], sh_fallout.shape[-1]))
+            
         long_memory = K.concatenate(
             (long_memory, sh_fallout),
-            axis=1,
+            axis=0,
         )
-        
+            
         new_helix = long_memory
 
         def body(new_helix):
@@ -231,19 +231,19 @@ class HelixMemory(tf.keras.layers.Layer):
                     [
                         helix_part,
                         short_memory,
-                    ], axis=1)
+                    ], axis=0)
             elif i==self.n_turns-1:
                 new_mem = K.concatenate(
                     [
                         helix_part,
                         new_mem,
-                    ], axis=1)
+                    ], axis=0)
             else:
                 new_mem = K.concatenate(
                     [
                         helix_part,
                         new_mem,
-                    ], axis=1)
+                    ], axis=0)
 
         self.k = 0
         self.add_update(K.update(self.memory, new_mem))
@@ -258,7 +258,6 @@ class HelixMemory(tf.keras.layers.Layer):
             'mode': self.mode.lower(),
             'memory_len': self.memory_len,
             'n_turns': self.n_turns,
-            'batch_size': self.batch_size,
         }
         base_config = super(HelixMemory, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

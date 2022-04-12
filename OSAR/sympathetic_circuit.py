@@ -116,7 +116,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
             kernel_regularizer=self.kernel_regularizer,
             )
         self.queue.build(
-            [(batch_dim, feature_dim), (batch_dim, timesteps_dim*feature_dim)])
+            [(batch_dim, feature_dim), (timesteps_dim*feature_dim)])
         self.queue.built = True
 
         self.built = True
@@ -127,32 +127,45 @@ class SympatheticCircuit(tf.keras.layers.Layer):
         feature_dim = tf.cast(input_shape[-1], tf.int32)
         return (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, 1), (batch_dim, timesteps_dim, feature_dim)
 
+    def find_max_path(self, space):
+        max_index_features = tf.argmax(K.sum(space[:, :, :, :, -1], axis=1), axis=-2)
+        max_index_timesteps = tf.argmax(K.sum(space[:, :, :, :, -1], axis=1), axis=2)
+        max_path = tf.gather(
+            space,
+            tf.squeeze(max_index_features),
+            axis=-1,
+            batch_dims=0,
+        )
+        max_path = tf.gather(
+            max_path,
+            tf.squeeze(max_index_timesteps),
+            axis=1,
+            batch_dims=0,
+        )
+        return tf.reduce_max(tf.reduce_max(max_path, axis=1,), axis=-1)
+
     # @tf.function(autograph=True)
     def call(self, inputs, frozen=False):
-        batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
-        timesteps_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
-        feature_dim = tf.cast(tf.shape(inputs)[-1], tf.int32)
-
+        # batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
+        # timesteps_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
+        # feature_dim = tf.cast(tf.shape(inputs)[-1], tf.int32)
+        
         # last_step = inputs[:, -1, :]
-        output, space = self.event_space(inputs, frozen=frozen)
-        space = K.reshape(space, (batch_dim, timesteps_dim,
-                                  timesteps_dim, feature_dim, feature_dim))
-        space = K.max(K.max(space, axis=1), axis=2)
-        target, importance = self.queue([output, space], frozen=frozen)
-        importance = tf.tile(
-            importance, (batch_dim, timesteps_dim, 1))
+        output, spaces = self.event_space(inputs, frozen=frozen)
 
-        # flat_space = tf.keras.layers.Flatten()(space)
-        # target, importance = self.queue([last_step, flat_space])
-        target = tf.expand_dims(space[:, -1, :], axis=1) / 2 + target / 2
+        max_spaces = tf.concat(tf.nest.map_structure(
+            self.find_max_path,
+            tf.split(spaces, spaces.shape[0], axis=0)
+        ), axis=0)
+        targets, importances = self.queue([output, max_spaces], frozen=frozen)
 
-        distance = 0.5 - K.hard_sigmoid(tf.norm(
-            inputs - tf.tile(target, (batch_dim, timesteps_dim, 1)),
+        distances = 0.5 - K.hard_sigmoid(tf.norm(
+            inputs - targets,
             axis=-1,
             ord='euclidean',
-            keepdims=True)) 
-        
-        return distance, importance, output
+            keepdims=True))
+        importances = tf.tile(importances, (1, distances.shape[1], 1))
+        return distances, importances, output
 
     def get_config(self):
         config = {

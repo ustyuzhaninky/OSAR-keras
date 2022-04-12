@@ -39,7 +39,7 @@ from setuptools.dist import Distribution
 import osar_version
 
 # Defaults if doing a release build.
-TENSORFLOW_VERSION = 'tensorflow>=2.3.0'
+TENSORFLOW_VERSION = 'tensorflow>=2.6.0'
 
 
 class BinaryDistribution(Distribution):
@@ -92,16 +92,16 @@ class SetupToolsHelper(object):
         """Returns list of required packages."""
         required_packages = [
             'importlib-metadata',
-            'gin-config >= 0.1.1',
-            'atari_py>=0.2.6',
-            'dm-reverb[tensorflow]>=0.2.0',
-            'tf_agents[reverb]>=0.7.1',
+            'gin-config>=0.5.0',
+            'atari_py>=0.2.9',
+            'dm-reverb[tensorflow]>=0.6.0',
+            'gym[atari]>=0.21.0',
+            'tf-agents[reverb]>=0.11.0',
             'tqdm>=4.59.0',
             'imageio>=2.8.2',
             'PILLOW>=7.1.2',
-            'pandas',
-            'pybullet>=3.1.0',
-            'tensorflow >= 2.4.1',
+            'pandas>=1.3.4',
+            'pybullet>=3.2.0',
         ]
         return required_packages
     

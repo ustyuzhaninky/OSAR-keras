@@ -74,16 +74,16 @@ class GraphAttention(tf.keras.layers.Layer):
         self.bias_constraint = tf.keras.constraints.get(bias_constraint)
     
     def build(self, input_shape):
-        if len(input_shape) < 3:
-            raise ValueError(
-                'The dimension of the input vector'
-                ' should be at least 3D: `(batch_size, timesteps, features)`')
+        # if len(input_shape) < 3:
+        #     raise ValueError(
+        #         'The dimension of the input vector'
+        #         ' should be at least 3D: `(batch_size, timesteps, features)`')
 
         if tensor_shape.dimension_value(input_shape[-1]) is None:
             raise ValueError('The last dimension of the first tensor of the inputs'
                              'should be defined. Found `None`.')
 
-        batch_dim, seq_len, feature_dim = input_shape[0], input_shape[1], input_shape[2]
+        feature_dim = input_shape[-1]
         
         self.kernel = self.add_weight(
             shape=(2 * feature_dim,),
@@ -105,15 +105,11 @@ class GraphAttention(tf.keras.layers.Layer):
 
     def call(self, inputs, **kwargs):
         
-        tf.debugging.assert_equal(tf.rank(
-            inputs), 3,
-            message='The dimension of the input vector'
-             ' should be at least 3D: `(batch_size, timesteps, features)`')
-
-        batch_dim, seq_len, feature_dim = inputs.shape[0], inputs.shape[1], inputs.shape[2]
-
+        # tf.debugging.assert_equal(tf.rank(
+        #     inputs), 3,
+        #     message='The dimension of the input vector'
+        #      ' should be at least 3D: `(batch_size, timesteps, features)`')
         concat_inputs = K.concatenate([inputs, inputs], axis=-1)
-
         inputs_linear = tf.einsum('ijk,k->ijk', concat_inputs, self.kernel)
         if self.use_bias:
             inputs_linear = nn.bias_add(inputs_linear, self.bias)

@@ -23,6 +23,7 @@ from __future__ import print_function
 
 import collections
 from typing import Optional, Text, cast, Iterable
+from OSAR.cap_layers import softmax
 
 import tensorflow as tf
 import numpy as np
@@ -30,6 +31,7 @@ import numpy as np
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.keras import backend as K
 from tensorflow.python.ops import nn
+from tf_agents.utils import common
 
 from . import Capsule, SequenceEncoder1D
 
@@ -98,84 +100,136 @@ class EventSpace(tf.keras.layers.Layer):
         self.bias_constraint = tf.keras.constraints.get(bias_constraint)
         self.return_space = return_space
 
+        self._optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+
+        self._space = None
+        self._space_shape = ()
+
+    @property
+    def space(self) -> tf.Variable:
+        
+        if not self.built:
+            raise ValueError("The `space` property could be called only from an initialized layer. "
+                "Call EventSpace.build before calling EventSpace.space.")
+        
+        if len(self._space_shape) != 4:
+            raise ValueError("The shape of `space` property has not been initialized properly or EventSpace.build has not been called. "
+                "Call EventSpace.build before calling EventSpace.space.")
+
+        if self._space is None:
+            self._space = tf.Variable(
+                initial_value=tf.keras.initializers.GlorotNormal()(shape=self._space_shape),
+                shape=tf.TensorShape(self._space_shape), trainable=False)
+            return self._space
+            # initialize space if it is empty with GlorotNormal white noise of size (timesteps, timesteps, features, features) or return self._space
+        
+        return self._space
+
+    @space.setter
+    # Automatic tracking catches "self._space" which adds an extra weight and
+    # breaks HDF5 checkpoints.
+    @tf.__internal__.tracking.no_automatic_dependency_tracking
+    def space(self, space):
+        # self._space = space
+        self.add_update(K.update(self._space, space))
+
     def compute_output_shape(self, input_shape):
-        batch_dim = tf.cast(input_shape[0], tf.int32)
+        batch_size = tf.cast(input_shape[0], tf.int32)
         output_dim = tf.cast(input_shape[-1], tf.int32)
-        return batch_dim, self.units, output_dim
+        return batch_size, self.units, output_dim
 
     def build(self, input_shape):
-        batch_dim = tf.cast(input_shape[0], tf.int32)
+        batch_size = tf.cast(input_shape[0], tf.int32)
         seq_dim = tf.cast(input_shape[1], tf.int32)
         output_dim = tf.cast(input_shape[-1], tf.int32)
         s_shape = seq_dim * self.shape[0] * self.shape[-1]
+
+        self._space_shape = (input_shape[1].numpy(), input_shape[1].numpy(), input_shape[-1].numpy(), input_shape[-1].numpy())
         
-        # self.caps = Capsule(
-        #     self.units,
-        #     self.units,
+        self.caps = Capsule(
+            self.units,
+            self.units,
+            name=f'{self.name}_Capsule'
+        )
+        self.caps.build((batch_size, seq_dim, output_dim))
+        self.caps.built = True
+
+        # self.space = self.add_weight(
+        #     shape=(seq_dim*seq_dim, output_dim*output_dim),
+        #     initializer=self.kernel_initializer,
+        #     regularizer=self.kernel_regularizer,
+        #     constraint=self.kernel_constraint,
+        #     name=f'{self.name}-space',
+        #     trainable=False,
         # )
-        # self.caps.build((batch_dim, seq_dim, output_dim))
-        # self.caps.built = True
 
-        self.space = self.add_weight(
-            shape=(batch_dim, seq_dim*seq_dim, output_dim*output_dim),
-            initializer=self.kernel_initializer,
-            regularizer=self.kernel_regularizer,
-            constraint=self.kernel_constraint,
-            name=f'{self.name}-space',
-            trainable=False,
-        )
+        self.encoder = SequenceEncoder1D(
+            output_dim, seq_dim,
+            activation='relu',
+            name=f'{self.name}_encoder'
+            )
+        self.encoder.build(
+            (batch_size, self.units, self.units))
+        self.encoder.built = True
 
-        # self.encoder = SequenceEncoder1D(
-        #     output_dim, seq_dim,
-        #     activation='relu'
+        # self.scaler = SequenceEncoder1D(
+        #     output_dim*output_dim, seq_dim*seq_dim,
+        #     activation='relu',
+        #     name=f'{self.name}_scaler'
         #     )
-        # self.encoder.build(
-        #     (batch_dim, seq_dim, output_dim))#(batch_dim, self.units, self.units))
-        # self.encoder.built = True
-
-        self.bias = self.add_weight(
-            name=f'{self.name}-bias',
-            initializer=self.bias_initializer,
-            regularizer=self.bias_regularizer,
-            shape=(batch_dim, 1,),
-            dtype=tf.float32,
-            trainable=True,
-        )
+        # self.scaler.build(
+        #     (batch_size, output_dim*output_dim, seq_dim*seq_dim))#self.units, self.units))
+        # self.scaler.built = True
                                   
         self.built = True
     
-    # @tf.function(autograph=True)
-    def call(self, inputs, frozen=False, training=False, **kwargs):
-        batch_dim = tf.cast(tf.shape(inputs)[0], tf.int32)
+    def _likelihood_values(self, inputs):
         seq_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
         output_dim = tf.cast(tf.shape(inputs)[-1], tf.int32)
 
-        rewards = tf.expand_dims(inputs[..., -1], axis=-1)
-        rewards = K.tile(rewards, (1, 1, seq_dim))
-            
-        cross_levels = tf.einsum('ijk,ijjkk->ijk',
-                            inputs,
-                            tf.reshape(self.space, (batch_dim, seq_dim, seq_dim, output_dim, output_dim)))
+        cross_levels = tf.einsum('ijk,jjkk->ijk',
+                                inputs,
+                                self.space)
         cross_levels = tf.raw_ops.LeakyRelu(features=cross_levels)
-        
-        # filters = self.caps(cross_levels)
-        # outputs = self.encoder(cross_levels)
-        outputs = cross_levels
-        
+            
+        cross_levels = self.caps(cross_levels)
+        cross_levels = self.encoder(cross_levels)
+
+        return cross_levels
+
+    def _update_space(self, levels, inputs):
+        seq_dim = tf.cast(tf.shape(inputs)[1], tf.int32)
+        output_dim = tf.cast(tf.shape(inputs)[-1], tf.int32)
+
+        ideal_rewards = K.max(
+                K.sum(self.space[:, :, -1, -1],
+                axis=0), axis=-1)
+        kr_prod = KroneckerMixture()([levels, inputs])
+        updated_space = tf.reshape(K.tanh(kr_prod), (seq_dim, seq_dim, output_dim, output_dim))#self.scaler(kr_prod))
+        updated_space = self.space * \
+                (1 - ideal_rewards) + ideal_rewards * updated_space
+            
+        self.add_update(K.update(self.space, updated_space))
+        return K.expand_dims(updated_space, axis=0)
+
+    # @tf.function(autograph=True)
+    def call(self, inputs, frozen=False, **kwargs):
+        batch_dim = inputs.shape[0]
+
         if not frozen:
-            ideal_rewards = K.reshape(
-                self.space, (batch_dim, seq_dim, seq_dim, output_dim, output_dim))
-            ideal_rewards = ideal_rewards[..., -1, -1]
-            reward_diff = K.tanh(K.max(K.max(K.abs(
-                ideal_rewards[..., 0, 0] - rewards), axis=1), axis=1) - self.bias)
-            updated_space = KroneckerMixture()([outputs, inputs]) 
-            updated_space = self.space * \
-                (1 - reward_diff) + reward_diff * updated_space
+            cross_levels = self._likelihood_values(inputs)
+            spaces = tf.concat(tf.nest.map_structure(
+                self._update_space,
+                tf.split(cross_levels, batch_dim, axis=0),
+                tf.split(inputs, batch_dim, axis=0)), axis=0)
+        else:
+            cross_levels = self._likelihood_values(inputs)
+            spaces = tf.tile(K.expand_dims(self.space, axis=0), (batch_dim, 1, 1, 1, 1))
         
         if self.return_space:
-            return outputs, self.space
+            return cross_levels, spaces
         else:
-            return outputs
+            return cross_levels
     
     def get_config(self):
         config = {
@@ -222,8 +276,6 @@ class KroneckerMixture(tf.keras.layers.Layer):
         return input_shape[0]
 
     def call(self, inputs, **kwargs):
-        batch_size = K.cast(inputs[0].shape[0], 'int32')
-        encoding_len = K.cast(inputs[0].shape[-1], 'int32')
         input_1, input_2 = inputs
         
         operator_1 = tf.linalg.LinearOperatorFullMatrix(input_1)

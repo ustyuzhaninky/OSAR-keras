@@ -55,7 +55,9 @@ from tf_agents.utils import eager_utils
 from tf_agents.utils import nest_utils
 from tf_agents.utils import common
 
-from . import TrialPolicy
+from OSAR.policy import QRewardPolicy
+
+__all__ = ['DQNTrialAgent']
 
 def compute_td_targets(next_q_values: types.Tensor,
                        rewards: types.Tensor,
@@ -64,7 +66,7 @@ def compute_td_targets(next_q_values: types.Tensor,
 
 
 @gin.configurable
-class TrialAgent(tf_agent.TFAgent):
+class DQNTrialAgent(tf_agent.TFAgent):
     """A Trial Agent - DQN agent, adaped for work with OSAR netsorks.
     """
 
@@ -80,7 +82,6 @@ class TrialAgent(tf_agent.TFAgent):
             update_period: types.Int = 1,
             td_errors_loss_fn: Optional[types.LossFn] = None,
             gamma: types.Float = 1.0,
-            batch_size: types.Int = 1,
             epsilon_greedy: types.FloatOrReturningFloat = 0.1,
             n_step_update: int = 1,
             boltzmann_temperature: Optional[types.Int] = None,
@@ -122,7 +123,6 @@ class TrialAgent(tf_agent.TFAgent):
             td_errors_loss_fn:  A function for computing the TD errors loss. If None,
                 a default value of elementwise huber_loss is used.
             gamma: A discount factor for future rewards.
-            batch_size: Batch size of the training inputs.
             epsilon_greedy: probability of choosing a random action in the default
                 epsilon-greedy collect policy (used only if a wrapper is not provided to
                 the collect_policy method).
@@ -169,7 +169,7 @@ class TrialAgent(tf_agent.TFAgent):
             self._network, None, input_spec=net_observation_spec,
             name='TargetNetwork')
         
-        self._target_network.frozen = True
+        # self._target_network.frozen = True
 
         self._check_network_output(self._network, 'network')
         self._check_network_output(self._target_network, 'target_network')
@@ -207,7 +207,7 @@ class TrialAgent(tf_agent.TFAgent):
         train_sequence_length = (
             n_step_update+1 if not network.state_spec else None)
         
-        super(TrialAgent, self).__init__(
+        super(DQNTrialAgent, self).__init__(
             time_step_spec,
             action_spec,
             policy,
@@ -267,8 +267,7 @@ class TrialAgent(tf_agent.TFAgent):
 
     def _setup_policy(self, time_step_spec, action_spec,
                       boltzmann_temperature, emit_log_probability):
-
-        policy = q_policy.QPolicy(  # TrialPolicy
+        policy = QRewardPolicy(
             time_step_spec,
             action_spec,
             q_network=self._network,

@@ -25,7 +25,7 @@ import base64
 import imageio
 import IPython
 import matplotlib
-import datetime
+from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
@@ -64,47 +64,114 @@ from tf_agents.replay_buffers import reverb_replay_buffer
 from tf_agents.replay_buffers import reverb_utils
 from tf_agents.train import actor
 from tf_agents.metrics import py_metrics
-from tf_agents.trajectories import trajectory
+from tf_agents.trajectories import trajectory, StepType
 from tf_agents import trajectories
 from tf_agents.utils import common
 from tf_agents.typing import types
-from tf_agents.specs import tensor_spec
+from tf_agents.specs import tensor_spec, array_spec
+from tf_agents.trajectories import time_step_spec
 import pandas as pd
 from tf_agents.drivers import py_driver
 from tf_agents.environments import py_environment
 from tf_agents.environments import tf_environment
 from tf_agents.trajectories import time_step as ts
-
-from . import OSARNetwork
+from tf_agents.environments.wrappers import ActionDiscretizeWrapper
+from tf_agents.environments.wrappers import OneHotActionWrapper
 
 __all__ = ['Experiment', 'Runner']
 
 @gin.configurable
 class RewardClipWrapper(PyEnvironmentBaseWrapper):
-  """Clips reward to values of -1, 0, 1 and stores both."""
+    """Clips reward to values of -1, 0, 1 and stores both."""
 
-  def __init__(self, env: py_environment.PyEnvironment):
-    """Creates a reward clip wrapper.
-    Args:
-      env: Environment to wrap.
-    """
-    super(RewardClipWrapper, self).__init__(env)
+    def __init__(self, env: py_environment.PyEnvironment):
+        """Creates a reward clip wrapper.
+        Args:
+        env: Environment to wrap.
+        """
+        super(RewardClipWrapper, self).__init__(env)
 
-    self.reward = []
-    self.clipped_reward = []
+        self.reward = []
+        self.clipped_reward = []
 
-  def _step(self, action):
+    def _step(self, action):
 
-    time_step = self._env.step(action)
-    clipped_reward = np.sign(time_step.reward)
+        time_step = self._env.step(action)
+        if isinstance(time_step, tuple):
+            done = time_step[2]
+            if isinstance(time_step[-1], dict) and time_step[-1].get('time_remaining'):
+                if time_step[-1].get('time_remaining') > 0:
+                    step_type = StepType.MID
+                elif time_step[-1].get('time_remaining') == 0 or done:
+                    step_type = StepType.LAST
+                else:
+                    step_type = StepType.MID
+            reward = tf.convert_to_tensor(time_step[1])
+            discount = tf.convert_to_tensor(1.0)
+            observation = time_step[0]
+            meta = time_step[-1]
+        else:
+            step_type = time_step.step_type
+            reward = time_step.reward
+            discount = time_step.discount
+            observation = time_step.observation
+        self.reward.append(reward)
+        clipped_reward = np.sign(reward)
 
-    self.reward.append(time_step.reward)
-    self.clipped_reward.append(clipped_reward)
+        self.reward.append(reward)
+        self.clipped_reward.append(clipped_reward)
 
-    clipped_reward = np.asarray(clipped_reward,
-                              dtype=np.asarray(time_step.reward).dtype)
-    return ts.TimeStep(time_step.step_type, clipped_reward, time_step.discount,
-                       time_step.observation)
+        clipped_reward = np.asarray(clipped_reward,
+                                dtype=np.asarray(time_step.reward).dtype)
+        
+        return ts.TimeStep(
+            step_type,
+            clipped_reward,
+            discount,
+            observation)
+
+@gin.configurable
+class RewardRecordWrapper(PyEnvironmentBaseWrapper):
+    """Clips reward to values of -1, 0, 1 and stores both."""
+
+    def __init__(self, env: py_environment.PyEnvironment):
+        """Creates a reward clip wrapper.
+        Args:
+        env: Environment to wrap.
+        """
+        super(RewardRecordWrapper, self).__init__(env)
+
+        self.reward = []
+        self.clipped_reward = []
+
+    def _step(self, action):
+
+        time_step = self._env.step(action)
+        if isinstance(time_step, tuple):
+            done = time_step[2]
+            if isinstance(time_step[-1], dict) and time_step[-1].get('time_remaining'):
+                if time_step[-1].get('time_remaining') > 0:
+                    step_type = StepType.MID
+                elif time_step[-1].get('time_remaining') == 0 or done:
+                    step_type = StepType.LAST
+                else:
+                    step_type = StepType.MID
+            reward = tf.convert_to_tensor(time_step[1])
+            discount = tf.convert_to_tensor(1.0)
+            observation = time_step[0]
+            meta = time_step[-1]
+        else:
+            step_type = time_step.step_type
+            reward = time_step.reward
+            discount = time_step.discount
+            observation = time_step.observation
+        self.reward.append(reward)
+
+        return ts.TimeStep(
+            step_type,
+            reward,
+            discount,
+            observation)
 
 
 @gin.configurable
@@ -116,7 +183,7 @@ class Experiment:
             agent_specs: Dict=None,
             agent_generator: Callable[[Dict], agents.TFAgent] = None,
             # Environment Options
-            env_name: Text = 'Alien-ram-v0',
+            env_name: Any = 'Alien-ram-v0',
             num_iterations: int = 20000,
             initial_collect_steps: int = 100,
             collect_steps_per_iteration: int = 1,
@@ -127,7 +194,9 @@ class Experiment:
             n_prefetch: int = 50,
             n_step_update: int = 2,
             policy_save_interval: int = 100,
-            saved_model_dir = ''
+            reward_clipping: bool = False,
+            saved_model_dir: Text = '',
+            num_actions=100,
             ):
 
         # Common parameters
@@ -140,17 +209,56 @@ class Experiment:
         self._eval_interval = eval_interval
         self._n_prefetch = n_prefetch
         self._n_step_update = n_step_update
-        self._env_name = env_name
+        self._reward_clipping = reward_clipping
 
-        # Setting up training and evaluation environments
-        train_py_env = suite_pybullet.load(
-            env_name)  # suite_gym.load(env_name)
-        eval_py_env = suite_pybullet.load(
-            env_name)  # suite_gym.load(env_name)
+        if isinstance(env_name, str):
+            self._env_name = env_name
+            # Setting up training and evaluation environments
+            train_py_env = suite_pybullet.load(
+                env_name)  # suite_gym.load(env_name)
+            eval_py_env = suite_pybullet.load(
+                env_name)  # suite_gym.load(env_name)
+        else:
+            # Custom environements for Unity-powered games (Only OTC works, others -- in the future releases)
+            self._env_name = env_name['name']
+            self._env = env_name['env']
+            train_py_env = self._env(**env_name['settings'], worker_id=0)
+            eval_py_env = self._env(**env_name['settings'], worker_id=1)
+
+            # TODO: Make sure it derives specs from the environement
+            train_py_env.observation_spec = lambda: tf.TensorSpec(
+                    shape=(84, 84, 3), dtype='uint8', name='observation')
+            train_py_env.action_spec = lambda: tensor_spec.BoundedTensorSpec(
+                shape=[], dtype='int64', minimum=0, maximum=54)
+            train_py_env.time_step_spec = lambda: time_step_spec(
+                observation_spec=train_py_env.observation_spec(),
+                reward_spec=tf.TensorSpec(shape=[1,], dtype='int64'))
+            
+            eval_py_env.observation_spec = lambda: tf.TensorSpec(
+                    shape=(84, 84, 3), dtype='uint8', name='observation')
+            eval_py_env.action_spec = lambda: tensor_spec.BoundedTensorSpec(
+                shape=[], dtype='int64', minimum=0, maximum=54)
+            eval_py_env.time_step_spec = lambda: time_step_spec(
+                observation_spec=eval_py_env.observation_spec(),
+                reward_spec=tf.TensorSpec(shape=[1,], dtype='int64'))
         
-        # TODO: Doesn't work well with clipped reward on q-learning
-        self._train_env = RewardClipWrapper(train_py_env)
-        self._eval_env = RewardClipWrapper(eval_py_env)
+        # Discretizing action space with ActionDiscretizeWrapper if needed.
+        flat_action_spec = tf.nest.flatten(train_py_env.action_spec())
+        if flat_action_spec[0].shape not in [(), (1,)]:
+            train_py_env = ActionDiscretizeWrapper(train_py_env, num_actions=num_actions)
+            eval_py_env = ActionDiscretizeWrapper(eval_py_env, num_actions=num_actions)
+        flat_action_spec = tf.nest.flatten(train_py_env.action_spec())
+        if len(flat_action_spec) > 1:
+            train_py_env = OneHotActionWrapper(train_py_env)
+            eval_py_env = OneHotActionWrapper(eval_py_env)
+
+        # TODO: Doesn't work well without clipped reward on q-learning
+        if reward_clipping:
+            self._train_env = RewardClipWrapper(train_py_env)
+            self._eval_env = RewardClipWrapper(eval_py_env)
+        else:
+            self._train_env = RewardRecordWrapper(train_py_env)
+            self._eval_env = RewardRecordWrapper(eval_py_env)
 
         # TODO: Implement gym support when Actor supports `TFPyEnvironment`s
         # self._train_env = tf_py_environment.TFPyEnvironment(train_py_env)
@@ -161,7 +269,7 @@ class Experiment:
         agent_specs['n_step_update'] = n_step_update
         agent_specs['observation_spec'] = tensor_spec.from_spec(self._train_env.observation_spec())
         # self._train_env.action_spec()
-        agent_specs['action_spec'] =  tensor_spec.from_spec(self._train_env.action_spec())
+        agent_specs['action_spec'] = tensor_spec.from_spec(self._train_env.action_spec())
         # self._train_env.time_step_spec()
         agent_specs['time_step_spec'] = tensor_spec.from_spec(self._train_env.time_step_spec())
 
@@ -194,12 +302,12 @@ class Experiment:
         sequence_length = 2
 
         # # Setting up the replay buffer
-        table_name = 'prioritized_table'
+        table_name = 'uniform_table'
         table = reverb.Table(
             table_name,
             max_size=self._replay_buffer_max_length,
-            # sampler=reverb.selectors.Uniform(),
-            sampler=reverb.selectors.Prioritized(priority_exponent=0.8),
+            sampler=reverb.selectors.Uniform(),
+            # sampler=reverb.selectors.Prioritized(priority_exponent=0.8),
             remover=reverb.selectors.Fifo(),
             rate_limiter=reverb.rate_limiters.MinSize(1))
 
@@ -210,7 +318,7 @@ class Experiment:
             table_name=table_name,
             local_server=reverb_server)
         dataset = reverb_replay.as_dataset(
-            sample_batch_size=1,
+            sample_batch_size=agent_specs['batch_size'],
             # sample_batch_size=self._train_env.batch_size,
             num_steps=sequence_length,
             ).prefetch(self._n_prefetch)
@@ -230,7 +338,6 @@ class Experiment:
         self._rb_observer = rb_observer
             
         # uniform_observer = UniformTrajectoryObserver(replay_buffer)
-
         initial_collect_actor = actor.Actor(
             self._train_env,
             self._search_policy,
@@ -266,15 +373,15 @@ class Experiment:
 
         # Triggers to save the agent's policy checkpoints.
         learning_triggers = [
-            triggers.PolicySavedModelTrigger(
-                cache_dir,
-                self._agent,
-                train_step_counter,
-                interval=policy_save_interval),
+            # triggers.PolicySavedModelTrigger(
+            #     cache_dir,
+            #     self._agent,
+            #     train_step_counter,
+            #     interval=policy_save_interval),
             triggers.StepPerSecondLogTrigger(
                 train_step_counter, interval=self._eval_interval),    # For evaluation
-            triggers.StepPerSecondLogTrigger(
-                train_step_counter, interval=1),    # For training
+            # triggers.StepPerSecondLogTrigger(
+            #     train_step_counter, interval=1),    # For training
         ]
         
         self._agent_learner = learner.Learner(
@@ -284,7 +391,6 @@ class Experiment:
             experience_dataset_fn,
             checkpoint_interval=self._eval_interval,
             summary_interval=self._eval_interval,
-            run_optimizer_variable_init=False,
             triggers=learning_triggers)
 
     def get_eval_metrics(self):
@@ -294,17 +400,23 @@ class Experiment:
             results[metric.name] = metric.result()
         return results
     
+    def get_train_metrics(self):
+        results = {}
+        for metric  in self._collect_actor.metrics:
+            results[metric.name] = metric.result()
+        return results
+    
     def __call__(self, progress: bool = True):
         
         # Forcing to create a file writer.
-        logdir = os.path.join(self._cache_dir, datetime.now().strftime('%Y%m%d-%H%M%S'))
-        file_writer = tf.summary.create_file_writer(os.path.join(logdir, 'scalars', 'metrics'))
+        # logdir = os.path.join(self._cache_dir, datetime.now().strftime('%Y%m%d-%H%M%S'))
+        # file_writer = tf.summary.create_file_writer(os.path.join(logdir, 'scalars', 'metrics'))
         
-        with file_writer.set_as_default():
-        # with self._agent_learner.train_summary_writer.as_default():
+        # with file_writer.as_default():
+        with self._agent_learner.train_summary_writer.as_default():
             returns = self.call(progress)
-            file_writer.flush()
-            # self._agent_learner.train_summary_writer.flush()
+            # file_writer.flush()
+            self._agent_learner.train_summary_writer.flush()
         
         return returns
 
@@ -317,8 +429,8 @@ class Experiment:
         returns = [avg_return]
 
         # Forcing to create a file writer.
-        logdir = os.path.join(self._cache_dir, datetime.now().strftime('%Y%m%d-%H%M%S'))
-        file_writer = tf.summary.create_file_writer(os.path.join(logdir, 'scalars', 'metrics'))
+        # logdir = os.path.join(self._cache_dir, datetime.now().strftime('%Y%m%d-%H%M%S'))
+        # file_writer = tf.summary.create_file_writer(os.path.join(logdir, 'scalars', 'metrics'))
 
         if progress:
             with tqdm.trange(self._num_iterations) as t:
@@ -330,6 +442,7 @@ class Experiment:
 
                     # Evaluating.
                     step = self._agent_learner.train_step_numpy
+                    self._agent.train_step_counter.assign(step+1)
 
                     step = self._agent.train_step_counter.numpy()
                     t.set_description(f'Episode {step}')
@@ -339,9 +452,12 @@ class Experiment:
                     if step % self._eval_interval == 0:
                         metrics = self.get_eval_metrics()
                         avg_return = metrics["AverageReturn"]
-                        t.set_postfix(
-                            train_loss=loss_info.loss.numpy(), avg_return=avg_return)
                         returns.append(metrics["AverageReturn"])
+                    else:
+                        metrics = self.get_train_metrics()
+                        avg_return = metrics["AverageReturn"]
+                    t.set_postfix(
+                            train_loss=loss_info.loss.numpy(), avg_return=avg_return)
                     tf.summary.scalar('reward/AverageReturn',
                                       metrics["AverageReturn"],
                                       step)
@@ -360,6 +476,9 @@ class Experiment:
                     metrics = self.get_eval_metrics()
                     avg_return = metrics["AverageReturn"]
                     returns.append(metrics["AverageReturn"])
+                else:
+                    metrics = self.get_train_metrics()
+                    avg_return = metrics["AverageReturn"]
                 tf.summary.scalar('reward/AverageReturn',
                                   metrics["AverageReturn"],
                                   step)
@@ -373,12 +492,18 @@ class Experiment:
         # TODO: Implement saving the agent
         
         dataset_folder = os.path.join(learner.TRAIN_DIR, 'datasets')
-
-        dataset = pd.DataFrame(np.concatenate([np.array([self._train_env.reward]).T,
-                                              np.array([self._train_env.clipped_reward]).T], axis=-1),
-                     columns=[
-            'Uclipped Return Train', 'Clipped Return Train'],
-            )
+        
+        if self._reward_clipping:
+            dataset = pd.DataFrame(np.concatenate([np.array([self._train_env.reward]).T,
+                                                np.array([self._train_env.clipped_reward]).T], axis=-1),
+                        columns=[
+                'Uclipped Return Train', 'Clipped Return Train'],
+                )
+        else:
+            dataset = pd.DataFrame(np.array([self._train_env.reward]).T,
+                                   columns=[
+                                           'Uclipped Return Train'],
+                )
         
         dataset.to_csv(os.path.join(dataset_folder, f'{self._env_name}-steps.csv'))
 

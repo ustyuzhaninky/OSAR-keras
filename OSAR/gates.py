@@ -39,7 +39,7 @@ from tensorflow.keras import backend as K
 from . import GraphAttention
 
 __all__ = ['AttentionGate', 'TransferGate',
-           'SequenceEncoder1D', 'Transformer']
+           'SequenceEncoder1D',]
 
 
 class TransferGate(tf.keras.layers.Dense):
@@ -253,7 +253,7 @@ class SequenceEncoder1D(tf.keras.layers.Dense):
         self.timesteps_units = int(timesteps_units) if not isinstance(
             timesteps_units, int) else timesteps_units
 
-        self.input_spec = InputSpec(min_ndim=2)
+        # self.input_spec = InputSpec(min_ndim=3)
         self.supports_masking = True
 
     def build(self, input_shape):
@@ -271,7 +271,7 @@ class SequenceEncoder1D(tf.keras.layers.Dense):
         if last_dim is None:
             raise ValueError('The last dimension of the inputs to `Dense` '
                              'should be defined. Found `None`.')
-        self.input_spec = InputSpec(min_ndim=2, axes={-1: last_dim})
+        # self.input_spec = InputSpec(min_ndim=3, axes={-1: last_dim})
         self.kernel = self.add_weight(
             f'{self.name}-kernel',
             shape=[timesteps, last_dim,
@@ -375,14 +375,15 @@ class AttentionGate(tf.keras.layers.Layer):
     def build(self, input_shape):
         batch_size = input_shape[0]
         sequence_length = input_shape[1]
-        output_dim = input_shape[-1]
-
+        output_dim = input_shape[2]
+        
         self.attention_layer_features = GraphAttention(
             self.units,
             use_bias=self.use_bias,
             kernel_regularizer=self.kernel_regularizer,
             bias_regularizer=self.bias_regularizer,
-            attention_dropout=self.attention_dropout
+            attention_dropout=self.attention_dropout,
+            name=f'{self.name}-GraphAttention-features'
             )
         self.attention_layer_features.build((batch_size, sequence_length, output_dim))
         self.attention_layer_features.built = True
@@ -392,7 +393,9 @@ class AttentionGate(tf.keras.layers.Layer):
             use_bias=self.use_bias,
             attention_dropout=self.attention_dropout,
             kernel_regularizer=self.kernel_regularizer,
-            bias_regularizer=self.bias_regularizer,)
+            bias_regularizer=self.bias_regularizer,
+            name=f'{self.name}-GraphAttention-timesteps'
+            )
         self.attention_layer_timesteps.build(
             (batch_size, output_dim, sequence_length))
         self.attention_layer_timesteps.built = True
@@ -433,7 +436,6 @@ class AttentionGate(tf.keras.layers.Layer):
     # @tf.function(autograph=True)
     def call(self, inputs, **kwargs):
         
-        batch_size = inputs.shape[0]
         sequence_length = inputs.shape[1]
         output_dim = inputs.shape[-1]
 

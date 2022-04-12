@@ -40,7 +40,7 @@ class QueueMemory(tf.keras.layers.Layer):
 
     # Input shape
         2D tensor with shape: `(batch_size, feature_dim)` - represents last state.
-        2D tensor with shape: `(batch_size, space_dim)` - represents flattened space dimension.
+        2D tensor with shape: `(space_dim,)` - represents flattened space dimension.
 
     # Output shape
         3D tensor with shape: `(batch_size, 1, output_dim)` - most important member of the queue.
@@ -76,19 +76,17 @@ class QueueMemory(tf.keras.layers.Layer):
         return input_shape[0], self.memory_len, input_shape[-1]
 
     def build(self, input_shape):
-        batch_size = K.cast(input_shape[0][0], 'int32')
-        timesteps_dim = 1
+
         feature_dim = K.cast(input_shape[0][-1], 'int32')
-        space_dim = K.cast(input_shape[1][-1], 'int32')
 
         self.memory = self.add_weight(
-            shape=(batch_size, self.memory_len, feature_dim),
+            shape=(self.memory_len, feature_dim),
             initializer='glorot_uniform',
             trainable=False,
             name=f'{self.name}_memory',
         )
         self.index = self.add_weight(
-            shape=(batch_size, self.memory_len, 1),
+            shape=(self.memory_len, 1),
             initializer='glorot_uniform',
             trainable=False,
             name=f'{self.name}_index',
@@ -98,93 +96,89 @@ class QueueMemory(tf.keras.layers.Layer):
 
     def _compute_compatability(self, logit, source):
         """Computes a compatability for a single-shot """
-        logit_substract = tf.tile(tf.expand_dims(
-            logit, axis=0), (1, source.shape[1], 1))
-        levels = tf.norm(tf.norm(source - logit_substract, axis=0), axis=-1)
+        levels = source - logit
         levels = 0.5 - K.hard_sigmoid(levels)
         return levels
 
-    def _remove_by_index(self, index):
-
-        indices = tf.concat([
-            tf.range(index[0]),
-            tf.range(index[0]+1, self.memory_len)
-        ], axis=0)
-        return tf.gather(self.index, indices, axis=1), tf.gather(self.memory, indices, axis=1)
+    def _remove_add_by_index(self, index, new_index, new_memory):
+        new_index = tf.where(index, new_index, self.index)
+        new_memory = tf.where(index, new_memory, self.memory)
+        self.add_update(K.update(self.index, new_index))
+        self.add_update(K.update(self.memory, new_memory))
     
     def _replace_by_index(self, source, index, value):
-        left_indices = tf.range(index)
-        right_indices = tf.range(index+1, source.shape[1])
-
-        gathered_indices_left = tf.gather(source, left_indices, axis=1)
-        gathered_indices_right = tf.gather(source, right_indices, axis=1)
-        prepped_value = tf.expand_dims(value, axis=1)
-        return tf.concat([gathered_indices_left, prepped_value, gathered_indices_right], axis=1)
+        update = tf.where(tf.tile(tf.expand_dims(index, axis=-1), (1, source.shape[-1])), source, value)
+        self.add_update(K.update(source, update))
 
     # @tf.function(autograph=True)
     def call(self, inputs, frozen=False, **kwargs):
-        states, maximum_route = inputs[0][:, -1, :], inputs[1]
-        batch_size = K.cast(K.shape(inputs[0])[0], 'int32')
-        timesteps_dim = 1
-        feature_dim = K.cast(K.shape(inputs[0])[-1], 'int32')
-        # TODO: Add support batches longer than 1: now only
-        # one-element batches must be used.
-        reward_sum = K.cumsum(inputs[0][..., -1], axis=1)[:, -1]
-        
-
+        states, maximum_routes = inputs[0], inputs[1]
+        targets, importances = tf.map_fn(
+            self._update,
+            (states, maximum_routes),
+            dtype=(states.dtype, maximum_routes.dtype)
+        )
+        return targets, importances
+    
+    def _update(self, inputs):
+        states, maximum_routes = K.expand_dims(inputs[0], axis=0), K.expand_dims(inputs[1], axis=0)
+        rewards = states[:, :, -1]
+        states = states[:, -1, :]
+        reward_sum =K.cumsum(rewards, axis=0)[:, -1]
         # Searching for similarities
         compatability_levels_by_queue = self._compute_compatability(
             states, self.memory)
         compatability_levels_by_space = self._compute_compatability(
-            states, maximum_route)
+            states, maximum_routes)
         
-        if not frozen:
-            # Applying by-similarity update
-            filter_queue = tf.where(compatability_levels_by_queue >= self.epsilon_probability)
-            if filter_queue.shape[0] != 0:
-                max_index = tf.math.argmax(compatability_levels_by_queue, axis=0)
-                updated_memory_by_queue = self.memory[:, max_index] * (
-                    1 - compatability_levels_by_queue[max_index]) + states * compatability_levels_by_queue[max_index]
-                updated_index_by_queue = self.index[:, max_index] * (
-                    1 - compatability_levels_by_queue[max_index]) + reward_sum * compatability_levels_by_queue[max_index]
-                self.add_update(K.update(self.memory, self._replace_by_index(
-                    self.memory, max_index, updated_memory_by_queue)))
-                self.add_update(K.update(self.index, self._replace_by_index(
-                    self.index, max_index, updated_index_by_queue)))
-            
-            filter_space = tf.where(compatability_levels_by_space >= self.epsilon_probability)
-            if filter_space.shape[0] != 0:
-                max_index = tf.math.argmax(compatability_levels_by_space, axis=0)
-                updated_memory_by_space = maximum_route[:, max_index] * compatability_levels_by_space[max_index] + states * (
-                    1 - compatability_levels_by_space[max_index])
-                updated_index_by_space = maximum_route[:, max_index, -1] * compatability_levels_by_space[max_index] + reward_sum * (
-                    1 - compatability_levels_by_space[max_index])
-                
-                min_reward_index = tf.argmin(self.index, axis=1)[0]
-                reduced_index, reduced_memory = self._remove_by_index(
-                    min_reward_index)
-                
-                new_memory = K.concatenate(
-                    [reduced_memory, K.expand_dims(updated_memory_by_space, axis=1)], axis=1)
-                new_priority = K.concatenate(
-                    [reduced_index, K.expand_dims(K.expand_dims(updated_index_by_space, axis=1), axis=1)], axis=1)
-                self.add_update(K.update(self.index, new_priority))
-                self.add_update(K.update(self.memory, new_memory))
-            
-            if (filter_queue.shape[0] == 0) & (filter_space.shape[0] == 0):
-                min_reward_index = tf.argmin(self.index, axis=1)[0]
-                reduced_index, reduced_memory = self._remove_by_index(min_reward_index)
+        # Applying by-similarity update
+        filter_queue = tf.where(compatability_levels_by_queue >= self.epsilon_probability)
+        if filter_queue.shape[0] != 0:
+            max_boolean_mask = compatability_levels_by_queue[..., -1]==tf.reduce_max(compatability_levels_by_queue[..., -1], axis=0)
+            max_index = tf.math.argmax(compatability_levels_by_queue[..., -1], axis=0)
+            compatability_levels_by_queue = tf.gather(
+                compatability_levels_by_queue,
+                max_index, axis=0)[..., -1]
+            index_slice = tf.gather(self.index, max_index, axis=0)
+            memory_slice = tf.gather(self.memory, max_index, axis=0)
 
-                # Build new memory and index with a unique element
-                new_memory = K.concatenate(
-                    [reduced_memory, K.expand_dims(states, axis=1)], axis=1)
-                new_priority = K.concatenate(
-                    [reduced_index, K.expand_dims(K.expand_dims(reward_sum, axis=1))], axis=1)
-                self.add_update(K.update(self.index, new_priority))
-                self.add_update(K.update(self.memory, new_memory))
+            updated_memory_by_queue = memory_slice * (
+                1 - compatability_levels_by_queue) + states * compatability_levels_by_queue
+            updated_index_by_queue = index_slice * (
+                1 - compatability_levels_by_queue) + reward_sum * compatability_levels_by_queue
+            
+            self._replace_by_index(self.memory, max_boolean_mask, updated_memory_by_queue)
+            if len(updated_index_by_queue.shape) < 2:
+                updated_index_by_queue = K.expand_dims(updated_index_by_queue, axis=-1)
+            if updated_index_by_queue.shape[-1] != 1:
+                updated_index_by_queue = tf.transpose(updated_index_by_queue, perm=[1, 0])
+            self._replace_by_index(self.index, max_boolean_mask, updated_index_by_queue)
+            
+        filter_space = tf.where(compatability_levels_by_space >= self.epsilon_probability)
+        if filter_space.shape[0] != 0:
+            # max_boolean_mask = compatability_levels_by_space[..., -1]==tf.reduce_max(compatability_levels_by_space[..., -1], axis=1)
+            max_index = tf.math.argmax(compatability_levels_by_space[..., -1], axis=0)
+            compatability_levels_by_space = tf.reduce_max(tf.norm(tf.gather(
+                compatability_levels_by_space, max_index, axis=0), axis=0), axis=0)
+            maximum_routes = tf.reduce_max(tf.gather(maximum_routes, max_index, axis=0), axis=0)
+            r_maximum_routes = tf.reduce_max(tf.gather(maximum_routes[..., -1], max_index, axis=0), axis=0)
+            
+            updated_memory_by_space = tf.expand_dims(tf.reduce_max(maximum_routes * compatability_levels_by_space + states * (
+                1 - compatability_levels_by_space), axis=0), axis=0)
+            updated_index_by_space = r_maximum_routes * compatability_levels_by_space[..., -1] + reward_sum * (
+                1 - compatability_levels_by_space[..., -1])
+            min_reward_index = self.index==tf.reduce_max(-self.index, axis=0)[0]
+            self._remove_add_by_index(min_reward_index, updated_index_by_space, updated_memory_by_space)
+            
+        # Build new memory and index with a unique element
+        if (filter_queue.shape[0] == 0) & (filter_space.shape[0] == 0):
+            min_reward_index = self.index==tf.reduce_max(-self.index, axis=0)[0]
+            self._remove_add_by_index(min_reward_index, reward_sum, states)
 
-        max_index = tf.argmax(self.index, axis=1)[0]
-        return tf.gather(self.memory, max_index, axis=1), tf.gather(self.index, max_index, axis=1)
+        max_index = tf.argmax(self.index, axis=0)[0]
+        queue_leader = tf.gather(self.memory, max_index, axis=0)
+        leader_importance = tf.gather(self.index, max_index, axis=0)
+        return K.expand_dims(queue_leader, axis=0), K.expand_dims(leader_importance, axis=0)
 
     def get_config(self):
         config = {

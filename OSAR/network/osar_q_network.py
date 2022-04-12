@@ -24,12 +24,15 @@ import tensorflow as tf
 import numpy as np
 
 from tensorflow.keras import backend as K
+from tf_agents.networks import q_network
+from tf_agents.networks import Network
+from tf_agents.networks import encoding_network
 import gin
 
-from . import ContextGenerator
-from . import SympatheticCircuit
+from .. import ContextGenerator
+from .. import SympatheticCircuit
 
-__all__ = ['OSARNetwork']
+__all__ = ['OSARQNetwork']
 
 """Sample Keras Network with OSAR, based on Q-network:
     https://github.com/tensorflow/agents/blob/v0.7.1/tf_agents/networks/q_network.py#L43-L149 
@@ -45,28 +48,25 @@ Implements a network that will generate the following layers:
 """
 
 def validate_specs(action_spec, observation_spec):
-  """Validates the spec contains a single action."""
-  del observation_spec  # not currently validated
+    """Validates the spec contains a single action."""
+    del observation_spec  # not currently validated
 
-  flat_action_spec = tf.nest.flatten(action_spec)
-  if len(flat_action_spec) > 1:
-    raise ValueError(
-        'Network only supports action_specs with a single action.')
-
-  if flat_action_spec[0].shape not in [(), (1,)]:
-    raise ValueError(
-        'Network only supports action_specs with shape in [(), (1,)])')
+    flat_action_spec = tf.nest.flatten(action_spec)
+    if len(flat_action_spec) > 1:
+        raise ValueError(
+            'Network only supports action_specs with a single action.')
+    
+    if flat_action_spec[0].shape not in [(), (1,)]:
+        raise ValueError(
+            'Network only supports action_specs with shape in [(), (1,)])')
 
 @gin.configurable
-class OSARNetwork(q_network.QNetwork):
-    """OSAR network."""
-
-    """Recurrent value network. Reduces to 1 value output per batch item."""
+class OSARQNetwork(q_network.QNetwork):
+    """OSAR Q-network."""
 
     def __init__(self,
                 input_tensor_spec,
                 action_spec,
-                batch_size,
                 memory_len=10,
                 frozen=False,
                 n_turns=3,
@@ -79,9 +79,10 @@ class OSARNetwork(q_network.QNetwork):
                 fc_layer_params=(10,),
                 output_fc_layer_params=(10, 10),
                 conv_type='2d',
+                batch_squash=True,
                 dtype=tf.float32,
-                 name='OSARNetwork'):
-        """Creates an instance of `OSARNetwork`.
+                 name='OSARQNetwork'):
+        """Creates an instance of `OSARQNetwork`.
         The logits output by __call__ will ultimately have a shape of
         `[batch_size, num_actions]`, where `num_actions` is computed as
         `action_spec.maximum - action_spec.minimum + 1`. Each value is a logit for
@@ -109,11 +110,13 @@ class OSARNetwork(q_network.QNetwork):
             observations, where each item is the number of units in the layer.
         activation_fn: Activation function, e.g. tf.nn.relu or tf.nn.leaky_relu.
         name: A string representing the name of the network.
+        batch_squash: If True the outer_ranks of the observation are squashed into
+            the batch dimension. This allow encoding networks to be used with
+            observations with shape [BxTx...].
         Raises:
         TypeError: `action_spec` is not a `BoundedTensorSpec`.
         """
         del input_dropout_layer_params
-
         validate_specs(action_spec, input_tensor_spec)
         action_spec = tf.nest.flatten(action_spec)[0]
         num_actions = action_spec.maximum - action_spec.minimum + 1
@@ -131,11 +134,11 @@ class OSARNetwork(q_network.QNetwork):
             activation_fn=activation_fn,
             kernel_initializer=kernel_initializer,
             conv_type=conv_type,
+            batch_squash=batch_squash,
             dtype=dtype)
         
         generator = ContextGenerator(
             units=fc_layer_params[0],
-            batch_size=batch_size,
             memory_len=memory_len,
             n_turns=n_turns,
             n_states=fc_layer_params[0],
@@ -164,16 +167,15 @@ class OSARNetwork(q_network.QNetwork):
             bias_regularizer='l2',
         )
 
-        units = num_actions
         q_value_layer = tf.keras.layers.Dense(
-            units,
+            num_actions,
             activation=None,
             kernel_initializer=tf.random_uniform_initializer(
                 minval=-0.03, maxval=0.03),
             bias_initializer=tf.constant_initializer(-0.2),
             dtype=dtype)
 
-        super(OSARNetwork, self).__init__(
+        super(OSARQNetwork, self).__init__(
             input_tensor_spec=input_tensor_spec,
             action_spec=action_spec,
             name=name)
@@ -183,13 +185,38 @@ class OSARNetwork(q_network.QNetwork):
         self._circuit = circuit
         self._repeater = gru
         self._q_value_layer = q_value_layer
-        self._action_memory = self.add_weight(
-            shape=(batch_size, 1, num_actions),
-            initializer=tf.keras.initializers.get('glorot_uniform'),
-            trainable=False,
-            name='action-memory'
-        )
+        self._action_size = num_actions
+        self._action_memory = None
+        self._batch_size = None
         self.frozen = frozen
+
+    @property
+    def action_memory(self):
+        if self._action_memory is None:
+            action_memory = tf.keras.initializers.GlorotNormal()(shape=(self.batch_size, self._action_size,))
+            return action_memory
+            # return action_memory if tf.nest.is_nested(self._action_size) else [action_memory]
+        return self._action_memory
+
+    @action_memory.setter
+    # Automatic tracking catches "self._action_memory" which adds an extra weight and
+    # breaks HDF5 checkpoints.
+    @tf.__internal__.tracking.no_automatic_dependency_tracking
+    def action_memory(self, action_memory):
+        self._action_memory = action_memory
+    
+    @property
+    def batch_size(self):
+        if self._batch_size is None:
+            return 1
+        return self._batch_size
+    
+    @batch_size.setter
+    # Automatic tracking catches "self._batch_size" which adds an extra weight and
+    # breaks HDF5 checkpoints.
+    @tf.__internal__.tracking.no_automatic_dependency_tracking
+    def batch_size(self, batch_size):
+        self._batch_size = batch_size
 
     # @tf.function(autograph=True)
     def call(self,
@@ -198,32 +225,35 @@ class OSARNetwork(q_network.QNetwork):
              step_type=None,
              network_state=(),
              training=False):
-        batch_dim = tf.shape(observation)[0]
-
         state, network_state = self._encoder(
             observation, step_type=step_type, network_state=network_state,
             training=training)
         
-        action_memory = self._action_memory
+        batch_size = 1 
+        if self.batch_size is None:
+            self.batch_size = 1
+        if observation.shape[0] != None:
+            self.action_memory = None
+            self.batch_size = observation.shape[0]
+            batch_size = observation.shape[0]
         
-        state = tf.expand_dims(state, axis=0)
-        reward = tf.expand_dims(tf.expand_dims(reward, axis=-1), axis=-1)
+        reward = tf.expand_dims(reward, axis=-1)
+        if reward.shape[0] != batch_size:
+            reward = tf.tile(reward, (batch_size, 1))
+
         context = K.concatenate(
             [state,
-             action_memory,
+             self.action_memory,
              reward], axis=-1)
-        context = self._context_generator(context, training=training)
-        distance, importance, context_updated = self._circuit(context, training=training, frozen=self.frozen)
-        context = K.concatenate([distance, importance, context_updated], axis=-1)
         
+        context = self._context_generator(context, training=training)
+
+        distances, importances, context_updated = self._circuit(context, training=training, frozen=self.frozen)
+        context = K.concatenate([distances, importances, context_updated], axis=-1)
+
         action = self._repeater(context)
 
-        q_value = self._q_value_layer(action, training=training)
+        logits = self._q_value_layer(action, training=training)
         
-        new_memory = q_value
-        self.add_update(K.update(self._action_memory,
-                                 K.expand_dims(new_memory, axis=0)))
-        
-        logits = q_value
-
+        self.action_memory = logits
         return logits, network_state
