@@ -62,7 +62,7 @@ class HelixMemory(tf.keras.layers.Layer):
         n_turns,
         compression_rate=2,
         mode='avg',
-        initializer='glorot_uniform',
+        initializer='glorot_normal',
         regularizer='l2',
         constraint=None,
         **kwargs):
@@ -98,7 +98,7 @@ class HelixMemory(tf.keras.layers.Layer):
         self.memory = self.add_weight(
             shape=(self.memory_len +
                    n_conv, output_dim),
-            initializer='glorot_uniform',
+            initializer='glorot_normal',
             trainable=False,
             name=f'{self.name}-memory',
         )

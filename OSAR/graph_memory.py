@@ -77,10 +77,10 @@ class EventSpace(tf.keras.layers.Layer):
         shape:Iterable,
         attention_dropout=0.0,
         use_bias:bool=True,
-        kernel_initializer='glorot_uniform',
+        kernel_initializer='glorot_normal',
         kernel_regularizer=None,
         kernel_constraint=None,
-        bias_initializer='glorot_uniform',
+        bias_initializer='glorot_normal',
         bias_regularizer=None,
         bias_constraint=None,
         return_space:bool=False,
@@ -149,7 +149,11 @@ class EventSpace(tf.keras.layers.Layer):
         self.caps = Capsule(
             self.units,
             self.units,
-            name=f'{self.name}_Capsule'
+            name=f'{self.name}_Capsule',
+            kernel_regularizer=self.kernel_regularizer,
+            bias_regularizer=self.bias_regularizer,
+            kernel_constraint=self.kernel_constraint,
+            bias_constraint=self.bias_constraint
         )
         self.caps.build((batch_size, seq_dim, output_dim))
         self.caps.built = True
@@ -166,7 +170,11 @@ class EventSpace(tf.keras.layers.Layer):
         self.encoder = SequenceEncoder1D(
             output_dim, seq_dim,
             activation='relu',
-            name=f'{self.name}_encoder'
+            name=f'{self.name}_encoder',
+            kernel_regularizer=self.kernel_regularizer,
+            bias_regularizer=self.bias_regularizer,
+            kernel_constraint=self.kernel_constraint,
+            bias_constraint=self.bias_constraint
             )
         self.encoder.build(
             (batch_size, self.units, self.units))
@@ -178,7 +186,7 @@ class EventSpace(tf.keras.layers.Layer):
         #     name=f'{self.name}_scaler'
         #     )
         # self.scaler.build(
-        #     (batch_size, output_dim*output_dim, seq_dim*seq_dim))#self.units, self.units))
+        #     (batch_size, self.units, self.units))
         # self.scaler.built = True
                                   
         self.built = True

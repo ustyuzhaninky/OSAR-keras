@@ -55,7 +55,7 @@ class QueueMemory(tf.keras.layers.Layer):
         self,
         memory_len: int,
         epsilon_probability: float = 0.51,
-        kernel_initializer = 'glorot_uniform',
+        kernel_initializer = 'glorot_normal',
         kernel_regularizer = None,
         kernel_constraint = None,
         **kwargs):
@@ -81,13 +81,17 @@ class QueueMemory(tf.keras.layers.Layer):
 
         self.memory = self.add_weight(
             shape=(self.memory_len, feature_dim),
-            initializer='glorot_uniform',
+            initializer=tf.keras.initializers.GlorotNormal(),#self.kernel_initializer,
+            # regularizer=self.kernel_regularizer,
+            # constraint=self.kernel_constraint,
             trainable=False,
             name=f'{self.name}_memory',
         )
         self.index = self.add_weight(
             shape=(self.memory_len, 1),
-            initializer='glorot_uniform',
+            initializer=tf.keras.initializers.GlorotNormal(),#self.kernel_initializer,
+            # regularizer=self.kernel_regularizer,
+            constraint=self.kernel_constraint,
             trainable=False,
             name=f'{self.name}_index',
         )
@@ -97,7 +101,7 @@ class QueueMemory(tf.keras.layers.Layer):
     def _compute_compatability(self, logit, source):
         """Computes a compatability for a single-shot """
         levels = source - logit
-        levels = 0.5 - K.hard_sigmoid(levels)
+        levels = tf.raw_ops.LeakyRelu(features=levels)
         return levels
 
     def _remove_add_by_index(self, index, new_index, new_memory):

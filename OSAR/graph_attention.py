@@ -50,10 +50,10 @@ class GraphAttention(tf.keras.layers.Layer):
 
     def __init__(self,
                  units,
-                 activation='sigmoid',
+                 activation='hard_sigmoid',
                  use_bias=True,
                  attention_dropout=0.0,
-                 kernel_initializer='glorot_normal',
+                 kernel_initializer='he_normal',
                  bias_initializer='zeros',
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -87,7 +87,7 @@ class GraphAttention(tf.keras.layers.Layer):
         
         self.kernel = self.add_weight(
             shape=(2 * feature_dim,),
-            initializer=self.kernel_initializer,
+            initializer=tf.keras.initializers.HeNormal(),
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
             name='kernel',
@@ -96,7 +96,7 @@ class GraphAttention(tf.keras.layers.Layer):
         if self.use_bias:
             self.bias = self.add_weight(
                 shape=(2 * feature_dim,),
-                initializer=self.bias_initializer,
+                initializer=tf.keras.initializers.HeNormal(),
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
                 name='bias',

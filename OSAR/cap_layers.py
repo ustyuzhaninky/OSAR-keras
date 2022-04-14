@@ -77,12 +77,26 @@ class Capsule(Layer):
                  routings=3,
                  share_weights=True,
                  activation='squash',
+                 kernel_initializer='glorot_normal',
+                 kernel_regularizer=None,
+                 kernel_constraint=None,
+                 bias_initializer='glorot_normal',
+                 bias_regularizer=None,
+                 bias_constraint=None,
                  **kwargs):
         super(Capsule, self).__init__(**kwargs)
         self.num_capsule = num_capsule
         self.dim_capsule = dim_capsule
         self.routings = routings
         self.share_weights = share_weights
+
+        self.kernel_initializer = tf.keras.initializers.get(kernel_initializer)
+        self.kernel_regularizer = tf.keras.regularizers.get(kernel_regularizer)
+        self.kernel_constraint = tf.keras.constraints.get(kernel_constraint)
+        self.bias_initializer = tf.keras.initializers.get(bias_initializer)
+        self.bias_regularizer = tf.keras.regularizers.get(bias_regularizer)
+        self.bias_constraint = tf.keras.constraints.get(bias_constraint)
+
         if activation == 'squash':
             self.activation = squash
         else:
@@ -95,7 +109,9 @@ class Capsule(Layer):
                 name=f'{self.name}-capsule-kernel',
                 shape=(1, input_dim_capsule,
                        self.num_capsule * self.dim_capsule),
-                initializer='glorot_uniform',
+                initializer=self.kernel_initializer,
+                regularizer=self.kernel_regularizer,
+                constraint=self.kernel_constraint,
                 trainable=True)
         else:
             input_num_capsule = input_shape[-2]
@@ -103,7 +119,9 @@ class Capsule(Layer):
                 name=f'{self.name}-capsule-kernel',
                 shape=(input_num_capsule, input_dim_capsule,
                        self.num_capsule * self.dim_capsule),
-                initializer='glorot_uniform',
+                initializer=self.kernel_initializer,
+                regularizer=self.kernel_regularizer,
+                constraint=self.kernel_constraint,
                 trainable=True)
 
     def call(self, inputs):
@@ -167,7 +185,7 @@ class Capsule1D(Layer):
             self.W = self.add_weight(name=f'{self.name}-capsule-kernel',
                                      shape=(1, input_dim_capsule,
                                             self.num_capsule * self.dim_capsule),
-                                     initializer='glorot_uniform',
+                                     initializer='glorot_normal',
                                      trainable=True)
         else:
             input_num_capsule = input_shape[-2]
@@ -175,7 +193,7 @@ class Capsule1D(Layer):
                                      shape=(input_num_capsule,
                                             input_dim_capsule,
                                             self.num_capsule * self.dim_capsule),
-                                     initializer='glorot_uniform',
+                                     initializer='glorot_normal',
                                      trainable=True)
 
     def call(self, u_vecs):

@@ -69,7 +69,7 @@ class SympatheticCircuit(tf.keras.layers.Layer):
                  memory_len,
                  dropout=0.0,
                  use_bias=True,
-                 kernel_initializer='glorot_uniform',
+                 kernel_initializer='glorot_normal',
                  kernel_regularizer=None,
                  kernel_constraint=None,
                  bias_initializer='truncated_normal',

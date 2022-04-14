@@ -95,7 +95,7 @@ class OSARActorDistributionNetwork(actor_distribution_network.ActorDistributionN
                 have the same length of fc_layer_params, or be None.
             activation_fn: Activation function, e.g. tf.nn.relu, slim.leaky_relu, ...
             kernel_initializer: Initializer to use for the kernels of the conv and
-                dense layers. If none is provided a default glorot_uniform.
+                dense layers. If none is provided a default glorot_normal.
             seed_stream_class: The seed stream class. This is almost always
                 tfp.util.SeedStream, except for in unit testing, when one may want to
                 seed all the layers deterministically.
