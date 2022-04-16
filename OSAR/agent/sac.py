@@ -54,6 +54,8 @@ from tf_agents.utils import object_identity
 from tf_agents.utils import eager_utils
 from tf_agents.utils import nest_utils
 
+from OSAR.policy import ActorRewardPolicy
+
 __all__ = ['SACTrialAgent']
 
 SacLossInfo = collections.namedtuple(
@@ -83,7 +85,7 @@ class SACTrialAgent(sac_agent.SacAgent):
                 critic_loss_weight: types.Float = 0.5,
                 alpha_loss_weight: types.Float = 1.0,
                 actor_policy_ctor: Callable[
-                    ..., tf_policy.TFPolicy] = actor_policy.ActorPolicy,
+                    ..., tf_policy.TFPolicy] = ActorRewardPolicy,
                 critic_network_2: Optional[network.Network] = None,
                 target_critic_network: Optional[network.Network] = None,
                 target_critic_network_2: Optional[network.Network] = None,
