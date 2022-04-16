@@ -56,7 +56,7 @@ from tf_agents.utils import nest_utils
 
 from OSAR.policy import ActorRewardPolicy
 
-__all__ = ['SACTrialAgent']
+__all__ = ['SacTrialAgent']
 
 SacLossInfo = collections.namedtuple(
     'SacLossInfo', ('critic_loss', 'actor_loss', 'alpha_loss'))
@@ -70,7 +70,7 @@ def std_clip_transform(stddevs: types.NestedTensor) -> types.NestedTensor:
     return tf.exp(stddevs)
 
 @gin.configurable
-class SACTrialAgent(sac_agent.SacAgent):
+class SacTrialAgent(sac_agent.SacAgent):
     """A Trial modification of the SAC Agent."""
 
     def __init__(self,
@@ -245,7 +245,7 @@ class SACTrialAgent(sac_agent.SacAgent):
 
         train_sequence_length = 2 if not critic_network.state_spec else None
 
-        super(SACTrialAgent, self).__init__(
+        super(SacTrialAgent, self).__init__(
             time_step_spec,
             action_spec,
             policy=policy,
@@ -264,7 +264,7 @@ class SACTrialAgent(sac_agent.SacAgent):
         for spec in flat_action_spec:
             if spec.dtype.is_integer:
                 raise NotImplementedError(
-                    'SACTrialAgent does not currently support discrete actions. '
+                    'SacTrialAgent does not currently support discrete actions. '
                     'Action spec: {}'.format(action_spec))
 
     def _get_default_target_entropy(self, action_spec):
