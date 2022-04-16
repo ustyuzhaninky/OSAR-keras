@@ -62,7 +62,7 @@ __all__ = ['DQNTrialAgent']
 def compute_td_targets(next_q_values: types.Tensor,
                        rewards: types.Tensor,
                        discounts: types.Tensor) -> types.Tensor:
-  return tf.stop_gradient(rewards + discounts * next_q_values)
+    return tf.stop_gradient(rewards + discounts * next_q_values)
 
 
 @gin.configurable
