@@ -14,3 +14,4 @@ tf-agents[reverb]>=0.13.0
 gin-config>=0.5.0
 pyvirtualdisplay>=2.2
 typing-extensions>=3.7.4.3
+rsa==4.9
