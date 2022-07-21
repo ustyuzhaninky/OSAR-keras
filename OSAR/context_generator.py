@@ -103,7 +103,6 @@ class ContextGenerator(tf.keras.layers.Layer):
         batch_dim = input_shape[0]
         timesteps_dim = input_shape[1]
         concat_features = input_shape[-1]
-
         self.memory = HelixMemory(
             self.memory_len,
             self.n_turns,
@@ -134,13 +133,13 @@ class ContextGenerator(tf.keras.layers.Layer):
             (batch_dim, self.memory_len+self.n_conv, concat_features))
         self.attention.built = True
 
-        # self.kernel = self.add_weight(
-        #     f'{self.name}-kernel',
-        #     shape=[self.memory_len+self.n_conv, self.memory_len+self.n_conv],
-        #     initializer=self.kernel_initializer,
-        #     regularizer=self.kernel_regularizer,
-        #     dtype=self.dtype,
-        #     trainable=True)
+        self.kernel = self.add_weight(
+            f'{self.name}-kernel',
+            shape=[self.memory_len+self.n_conv, self.memory_len+self.n_conv],
+            initializer=self.kernel_initializer,
+            regularizer=self.kernel_regularizer,
+            dtype=self.dtype,
+            trainable=True)
 
         self.built = True
     

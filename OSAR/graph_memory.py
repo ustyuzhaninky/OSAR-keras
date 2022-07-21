@@ -144,7 +144,7 @@ class EventSpace(tf.keras.layers.Layer):
         output_dim = tf.cast(input_shape[-1], tf.int32)
         s_shape = seq_dim * self.shape[0] * self.shape[-1]
 
-        self._space_shape = (input_shape[1].numpy(), input_shape[1].numpy(), input_shape[-1].numpy(), input_shape[-1].numpy())
+        self._space_shape = (input_shape[1], input_shape[1], input_shape[-1], input_shape[-1])
         
         self.caps = Capsule(
             self.units,

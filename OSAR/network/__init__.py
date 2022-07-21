@@ -15,3 +15,5 @@
 
 from OSAR.network.osar_q_network import *
 from OSAR.network.osar_distribution_network import *
+from OSAR.network.art_network import *
+from OSAR.network.art_discriminator import *

@@ -39,7 +39,7 @@ from setuptools.dist import Distribution
 import osar_version
 
 # Defaults if doing a release build.
-TENSORFLOW_VERSION = 'tensorflow>=2.6.0'
+TENSORFLOW_VERSION = 'tensorflow>=2.9.0'
 
 
 class BinaryDistribution(Distribution):
@@ -75,7 +75,7 @@ class SetupToolsHelper(object):
         """
         self.release = release
         self.tf_version_override = tf_version_override
-    
+
     def _get_version(self):
         """Returns the version and project name to associate with the build."""
         if self.release:
@@ -90,21 +90,10 @@ class SetupToolsHelper(object):
 
     def _get_required_packages(self):
         """Returns list of required packages."""
-        required_packages = [
-            'importlib-metadata',
-            'gin-config>=0.5.0',
-            'atari_py>=0.2.9',
-            'dm-reverb[tensorflow]>=0.6.0',
-            'gym[atari]>=0.21.0',
-            'tf-agents[reverb]>=0.11.0',
-            'tqdm>=4.59.0',
-            'imageio>=2.8.2',
-            'PILLOW>=7.1.2',
-            'pandas>=1.3.4',
-            'pybullet>=3.2.0',
-        ]
+        with open('requirements.txt', 'rt') as file:
+            required_packages = file.readlines()
         return required_packages
-    
+
     def _get_tensorflow_packages(self):
         """Returns list of required packages if using OSAR."""
         tf_packages = []
@@ -156,7 +145,7 @@ class SetupToolsHelper(object):
                 'Intended Audience :: Developers',
                 'Intended Audience :: Education',
                 'Intended Audience :: Science/Research',
-                
+
 
                 # Pick your license as you wish
                 'License :: OSI Approved :: Apache Software License',
