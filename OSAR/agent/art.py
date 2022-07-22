@@ -458,7 +458,6 @@ class ArtAgent(tf_agent.TFAgent):
                 tf.expand_dims(
                     reward_scale_factor, axis=-1) * new_reward + tf.expand_dims(
                         gamma, axis=-1) * tf.expand_dims(next_time_steps.discount, axis=-1) * target_probs)
-            # discriminator_loss = self._loss_fn(discriminator_probs, td_targets)
             discriminator_loss = common.element_wise_squared_loss(discriminator_probs, td_targets)
 
             reg_loss = self._actor_network.losses if self._actor_network else None
@@ -513,8 +512,9 @@ class ArtAgent(tf_agent.TFAgent):
 
                 actions = tf.nest.flatten(actions)
 
-            d4pg_grad = tape.gradient([discriminator_probs], actions)
-            actor_loss = d4pg_grad[0] - risk_fn
+            d4pg_grad = tf.expand_dims(next_log_pis, axis=-1) * common.entropy(
+                tape.gradient([discriminator_probs], actions)[0])
+            actor_loss = self._loss_fn(actions, actions + d4pg_grad)
 
             reg_loss = self._actor_network.losses if self._actor_network else None
             agg_loss = common.aggregate_losses(
