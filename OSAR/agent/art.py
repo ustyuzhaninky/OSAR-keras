@@ -74,7 +74,7 @@ from OSAR.policy import ActorRewardPolicy
 __all__ = ['ArtAgent']
 
 PnuLossInfo = collections.namedtuple(
-    'PnuLossInfo', ('discriminator_loss', 'actor_loss', 'alpha_loss'))
+    'PnuLossInfo', ('discriminator_loss', 'actor_loss'))
 
 @gin.configurable
 class ArtAgent(tf_agent.TFAgent):
@@ -90,13 +90,10 @@ class ArtAgent(tf_agent.TFAgent):
                 discriminator_network: network.Network,
                 actor_optimizer: types.Optimizer,
                 discriminator_optimizer: types.Optimizer,
-                alpha_optimizer: Optional[types.Optimizer] = None,
                 actor_policy_ctor: Callable[
                     ..., tf_policy.TFPolicy] = ActorRewardPolicy,
-                initial_alpha: Optional[types.Float] = 0.1,
                 initial_etha: Optional[types.Float] = 0.1,
                 initial_beta: Optional[types.Float] = 0.5,
-                use_log_alpha_in_alpha_loss: bool = True,
                 loss_fn: types.LossFn = common.element_wise_huber_loss,
                 gamma: Optional[types.Float] = 1.0,
                 reward_scale_factor: Optional[types.Float] = 1.0,
@@ -115,14 +112,9 @@ class ArtAgent(tf_agent.TFAgent):
             returns binary estimation (q_values) for each observation, action and reward.
         actor_optimizer: The optimizer to use for the actor network.
         discriminator_optimizer: The optimizer to use for the discriminator network.
-        alpha_optimizer: (Optional.) The optimizer to use for the alpha hyperparameter.
         actor_policy_ctor: The policy class to use.
-        initial_alpha: Initial value for initial_alpha.
         initial_etha: Initial value for etha hyperparameter (0 < etha <= 1).
         initial_beta: Initial value for beta hyperparameter (beta > 0).
-        use_log_alpha_in_alpha_loss: A boolean, whether using log_alpha or alpha
-            in alpha loss. Certain implementations of SAC use log_alpha as log
-            values are generally nicer to work with.
         loss_fn: A function for computing the elementwise discriminator errors loss.
         gamma: A discount factor for future rewards.
         reward_scale_factor: Multiplicative scale for the reward.
@@ -165,15 +157,6 @@ class ArtAgent(tf_agent.TFAgent):
             discriminator_network.create_variables(discriminator_spec)
         self._discriminator_network = discriminator_network
 
-        if not alpha_optimizer:
-            alpha_optimizer = discriminator_optimizer.copy()
-
-        self._alpha = common.create_variable(
-            'initial_alpha',
-            initial_value=initial_alpha,
-            dtype=tf.float32,
-            trainable=True)
-
         self._etha = common.create_variable(
             'etha',
             initial_value=initial_etha,
@@ -187,14 +170,11 @@ class ArtAgent(tf_agent.TFAgent):
 
         entropy = self._get_default_entropy(action_spec)
 
-        self._use_log_alpha_in_alpha_loss = use_log_alpha_in_alpha_loss
         self._actor_optimizer = actor_optimizer
         self._discriminator_optimizer = discriminator_optimizer
-        self._alpha_optimizer = alpha_optimizer
         self._loss_fn = loss_fn
         self._reward_scale_factor = reward_scale_factor
         self._gamma = gamma
-        self._entropy = entropy
         self._gradient_clipping = gradient_clipping
         self._debug_summaries = debug_summaries
         self._summarize_grads_and_vars = summarize_grads_and_vars
@@ -286,30 +266,18 @@ class ArtAgent(tf_agent.TFAgent):
         self._apply_gradients(actor_grads, trainable_actor_variables,
                               self._actor_optimizer)
 
-        alpha_variable = [self._alpha]
-        with tf.GradientTape(watch_accessed_variables=False) as tape:
-            assert alpha_variable, 'No alpha variable to optimize.'
-            tape.watch(alpha_variable)
-            alpha_loss = self.alpha_loss(
-                time_steps, weights=weights, training=True)
-        tf.debugging.check_numerics(alpha_loss, 'alpha loss is inf or nan.')
-        alpha_grads = tape.gradient(alpha_loss, alpha_variable)
-        self._apply_gradients(alpha_grads, alpha_variable, self._alpha_optimizer)
-
         with tf.name_scope('Losses'):
             tf.compat.v2.summary.scalar(
                 name='discriminator_loss', data=discriminator_loss, step=self.train_step_counter)
             tf.compat.v2.summary.scalar(
                 name='actor_loss', data=actor_loss, step=self.train_step_counter)
-            tf.compat.v2.summary.scalar(
-                name='alpha_loss', data=alpha_loss, step=self.train_step_counter)
 
         self.train_step_counter.assign_add(1)
 
-        total_loss = discriminator_loss + actor_loss + alpha_loss
+        total_loss = discriminator_loss + actor_loss
 
         extra = PnuLossInfo(
-            discriminator_loss=discriminator_loss, actor_loss=actor_loss, alpha_loss=alpha_loss)
+            discriminator_loss=discriminator_loss, actor_loss=actor_loss)
 
         return tf_agent.LossInfo(loss=total_loss, extra=extra)
 
@@ -345,22 +313,16 @@ class ArtAgent(tf_agent.TFAgent):
             time_steps, weights=weights, training=training)
         tf.debugging.check_numerics(actor_loss, 'Actor loss is inf or nan.')
 
-        alpha_loss = self.alpha_loss(
-            time_steps, weights=weights, training=training)
-        tf.debugging.check_numerics(alpha_loss, 'alpha loss is inf or nan.')
-
         with tf.name_scope('Losses'):
             tf.compat.v2.summary.scalar(
                 name='discriminator_loss', data=discriminator_loss, step=self.train_step_counter)
             tf.compat.v2.summary.scalar(
                 name='actor_loss', data=actor_loss, step=self.train_step_counter)
-            tf.compat.v2.summary.scalar(
-                name='alpha_loss', data=alpha_loss, step=self.train_step_counter)
 
-        total_loss = discriminator_loss + actor_loss + alpha_loss
+        total_loss = discriminator_loss + actor_loss
 
         extra = PnuLossInfo(
-            discriminator_loss=discriminator_loss, actor_loss=actor_loss, alpha_loss=alpha_loss)
+            discriminator_loss=discriminator_loss, actor_loss=actor_loss)
 
         return tf_agent.LossInfo(loss=total_loss, extra=extra)
 
@@ -477,7 +439,7 @@ class ArtAgent(tf_agent.TFAgent):
             discriminator_q_values, targets, target_q_values, reward_fn, unused_network_state = self._discriminator_network(
                 discriminator_input, actions=actions, rewards=next_time_steps.reward,
                 step_type=next_time_steps.step_type, training=training)
-            target_q_values = target_q_values[..., 0] - tf.exp(self._alpha) * tf.expand_dims(next_log_pis, axis=-1)
+            target_q_values = target_q_values[..., 0]
 
             tf.debugging.check_numerics(discriminator_q_values, 'Discriminator Values are inf or nan.')
             discriminator_probs = tf.nn.softmax(discriminator_q_values, axis=-1)
@@ -539,7 +501,7 @@ class ArtAgent(tf_agent.TFAgent):
                 discriminator_q_values, targets, target_q_values, reward_fn, unused_network_state = self._discriminator_network(
                     discriminator_input, actions=actions, rewards=time_steps.reward,
                     step_type=time_steps.step_type, training=False)
-                target_q_values = target_q_values[..., 0] - tf.exp(self._alpha) * tf.expand_dims(next_log_pis, axis=-1)
+                target_q_values = target_q_values[..., 0]
 
                 tf.debugging.check_numerics(discriminator_q_values, 'Discriminator Values are inf or nan.')
                 discriminator_probs = tf.nn.softmax(discriminator_q_values, axis=-1)
@@ -552,7 +514,7 @@ class ArtAgent(tf_agent.TFAgent):
                 actions = tf.nest.flatten(actions)
 
             d4pg_grad = tape.gradient([discriminator_probs], actions)
-            actor_loss = d4pg_grad[0] + tf.exp(self._alpha) * tf.expand_dims(next_log_pis, axis=-1) - risk_fn
+            actor_loss = d4pg_grad[0] - risk_fn
 
             reg_loss = self._actor_network.losses if self._actor_network else None
             agg_loss = common.aggregate_losses(
@@ -565,51 +527,6 @@ class ArtAgent(tf_agent.TFAgent):
                                         discriminator_q_values, time_steps)
 
             return actor_loss
-
-    def alpha_loss(self,
-                    time_steps: ts.TimeStep,
-                    weights: Optional[types.Tensor] = None,
-                    training: bool = False) -> types.Tensor:
-        """Computes the alpha_loss for EC-SAC training.
-        Args:
-        time_steps: A batch of timesteps.
-        weights: Optional scalar or elementwise (per-batch-entry) importance
-            weights.
-        training: Whether this loss is being used during training.
-        Returns:
-        alpha_loss: A scalar alpha loss.
-        """
-        with tf.name_scope('alpha_loss'):
-            nest_utils.assert_same_structure(time_steps, self.time_step_spec)
-
-            # We do not update actor during alpha loss.
-            actions, next_log_pis = self._actions_and_log_probs(
-                time_steps, training=False)
-            discriminator_q_values, targets, target_q_values, reward_fn, unused_network_state = self._discriminator_network(
-                time_steps.observation, actions=actions, rewards=time_steps.reward,
-                step_type=time_steps.step_type, training=False)
-
-            tf.debugging.check_numerics(discriminator_q_values, 'Discriminator Values are inf or nan.')
-            discriminator_probs = tf.nn.softmax(discriminator_q_values, axis=-1)
-            target_probs = tf.stop_gradient(tf.nn.softmax(target_q_values, axis=-1))
-            reward = time_steps.reward
-
-            risk_fn, positive, negative = self._calculate_risk(
-                tf.expand_dims(next_log_pis, axis=-1), discriminator_probs, target_probs, reward_fn)
-
-            entropy_diff = tf.stop_gradient(-next_log_pis - self._entropy)
-            if self._use_log_alpha_in_alpha_loss:
-                alpha_loss = (self._alpha * entropy_diff)
-            else:
-                alpha_loss = (tf.exp(self._alpha) * entropy_diff)
-
-            agg_loss = common.aggregate_losses(
-                per_example_loss=alpha_loss, sample_weight=weights)
-            alpha_loss = agg_loss.total_loss
-
-            self._alpha_loss_debug_summaries(alpha_loss, entropy_diff)
-
-            return alpha_loss
 
     def _discriminator_loss_debug_summaries(self, td_targets, positive_samples, negative_samples):
         if self._debug_summaries:
@@ -668,13 +585,3 @@ class ArtAgent(tf_agent.TFAgent):
                                                     self.train_step_counter)
             except NotImplementedError:
                 pass  # Some distributions do not have an analytic entropy.
-
-    def _alpha_loss_debug_summaries(self, alpha_loss, entropy_diff):
-        if self._debug_summaries:
-            common.generate_tensor_summaries('alpha_loss', alpha_loss,
-                                            self.train_step_counter)
-            common.generate_tensor_summaries('entropy_diff', entropy_diff,
-                                            self.train_step_counter)
-
-            tf.compat.v2.summary.scalar(
-                name='alpha', data=self._alpha, step=self.train_step_counter)
